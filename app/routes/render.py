@@ -7,11 +7,12 @@ visualizations from SQL result data using the sandboxed chart generation engine.
 
 import logging
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Response
 from pydantic import BaseModel, Field, validator
 
 from app.viz.sandbox import render_chart, ChartResult
 from app.middleware import get_request_id
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,10 @@ class RenderRequest(BaseModel):
         description="Rendering mode: spec (declarative) or python (code execution)",
         pattern="^(spec|python)$"
     )
+    enable_python: bool = Field(
+        False,
+        description="Feature flag to enable python-code mode execution"
+    )
     code: Optional[str] = Field(
         None,
         description="Optional Python code for custom visualization",
@@ -99,6 +104,7 @@ class RenderResponse(BaseModel):
 @router.post("/render", response_model=RenderResponse)
 async def render_visualization(
     request: RenderRequest,
+    response: Response,
     request_id: str = Depends(get_request_id)
 ) -> RenderResponse:
     """
@@ -130,6 +136,11 @@ async def render_visualization(
     """
     logger.info(f"Chart render request received [request_id={request_id}] chart={request.chart}")
     
+    # Set Cache-Control headers to prevent stale images in demos
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    
     try:
         # Limit data size for performance and security
         limited_data = request.data[:request.limit] if len(request.data) > request.limit else request.data
@@ -149,8 +160,20 @@ async def render_visualization(
             )
         
         if request.mode == "python":
-            # For MVP, we'll focus on spec mode only and return error for python mode
-            logger.warning(f"Python mode not yet implemented [request_id={request_id}]")
+            # Check feature flag for python-code mode
+            if not request.enable_python:
+                logger.warning(f"Python mode requires feature flag [request_id={request_id}]")
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "Feature Flag Required",
+                        "message": "Python code execution mode requires 'enable_python' flag set to true.",
+                        "request_id": request_id
+                    }
+                )
+            
+            # Python mode implementation would go here
+            logger.warning(f"Python mode not yet fully implemented [request_id={request_id}]")
             raise HTTPException(
                 status_code=501,
                 detail={
@@ -217,7 +240,10 @@ async def render_visualization(
         )
 
 @router.get("/render/health")
-async def render_health_check(request_id: str = Depends(get_request_id)) -> Dict[str, Any]:
+async def render_health_check(
+    response: Response,
+    request_id: str = Depends(get_request_id)
+) -> Dict[str, Any]:
     """
     Health check endpoint for visualization rendering service.
     
@@ -227,6 +253,9 @@ async def render_health_check(request_id: str = Depends(get_request_id)) -> Dict
     - Basic chart generation works
     """
     logger.info(f"Render health check requested [request_id={request_id}]")
+    
+    # Set Cache-Control headers for health check too
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     
     try:
         # Test basic chart rendering with sample data

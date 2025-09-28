@@ -6,6 +6,7 @@ This module provides isolated chart generation with strict security constraints:
 - CPU and memory limits enforced
 - Headless matplotlib backend (Agg)
 - Returns base64-encoded PNG images
+- Hardened against resource abuse and data overload
 """
 
 import os
@@ -16,6 +17,8 @@ import logging
 import traceback
 import uuid
 import platform
+import re
+import html
 from contextlib import contextmanager
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
@@ -43,6 +46,22 @@ from .whitelist import (
     validate_safe_environment, MAX_CPU_TIME, MAX_MEMORY, MAX_IMAGE_SIZE, MAX_DATA_ROWS
 )
 
+# Hardening constants
+MAX_PIXELS = 2_000_000  # 2 million pixels max
+MAX_DPI = 150  # Maximum DPI for charts
+MAX_CATEGORIES = 50  # Maximum distinct categories for bar charts
+MAX_SCATTER_ROWS = 5_000  # Maximum rows for scatter/line charts (downsampling)
+MAX_PNG_SIZE = 2.5 * 1024 * 1024  # 2.5MB maximum PNG size
+RANDOM_SEED = 42  # Fixed seed for reproducible sampling
+
+# Assert backend is Agg at runtime
+assert matplotlib.get_backend() == 'Agg', f"Backend must be 'Agg', got '{matplotlib.get_backend()}'"
+
+# Set colorblind-safe palette globally
+sns.set_palette("colorblind")
+# Ensure line/marker styles differentiate series (not color alone)
+sns.set_style("whitegrid")
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -58,6 +77,7 @@ class ChartResult:
     issues: List[str]
     correlation_id: str
     generated_at: datetime
+    file_size_bytes: int = 0  # Size of generated PNG in bytes
 
 class TimeoutError(Exception):
     """Raised when chart generation exceeds time limit."""
@@ -167,9 +187,116 @@ def detect_chart_type(data: pd.DataFrame) -> str:
             # Multiple mixed columns - grouped bar chart
             return 'bar'
 
+def sanitize_caption(caption: str) -> str:
+    """
+    Sanitize caption text to prevent HTML injection and ensure plain text only.
+    
+    Args:
+        caption: Raw caption text
+        
+    Returns:
+        Sanitized plain text caption
+    """
+    if not caption:
+        return "Chart"
+    
+    # Remove HTML tags and decode HTML entities
+    caption = re.sub(r'<[^>]*>', '', str(caption))
+    caption = html.unescape(caption)
+    
+    # Remove potentially dangerous characters and limit length
+    caption = re.sub(r'[<>&"\'`]', '', caption)
+    caption = caption.strip()[:200]  # Limit to 200 chars
+    
+    return caption or "Chart"
+
+def validate_pixel_budget(width: int, height: int, dpi: int) -> None:
+    """
+    Validate that image dimensions don't exceed pixel budget.
+    
+    Args:
+        width: Image width in inches
+        height: Image height in inches  
+        dpi: Dots per inch
+        
+    Raises:
+        ValueError: If pixel budget is exceeded
+    """
+    total_pixels = int(width * dpi) * int(height * dpi)
+    
+    if total_pixels > MAX_PIXELS:
+        raise ValueError(
+            f"Pixel budget exceeded: {total_pixels:,} pixels > {MAX_PIXELS:,} limit. "
+            f"Try smaller dimensions or lower DPI."
+        )
+    
+    if dpi > MAX_DPI:
+        raise ValueError(
+            f"DPI limit exceeded: {dpi} > {MAX_DPI} limit. "
+            f"Please reduce image quality."
+        )
+
+def handle_nans(data: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Handle NaN values in data and track what was done.
+    
+    Args:
+        data: DataFrame potentially containing NaN values
+        
+    Returns:
+        Tuple of (cleaned DataFrame, list of processing notes)
+    """
+    issues = []
+    original_rows = len(data)
+    
+    # Check for NaN values
+    nan_columns = []
+    for col in data.columns:
+        nan_count = data[col].isnull().sum()
+        if nan_count > 0:
+            nan_columns.append(f"{col} ({nan_count} nulls)")
+    
+    if nan_columns:
+        # Drop rows with any NaN values
+        cleaned_data = data.dropna()
+        dropped_rows = original_rows - len(cleaned_data)
+        
+        if dropped_rows > 0:
+            issues.append(f"Dropped {dropped_rows} rows with nulls in {', '.join(nan_columns)}")
+        
+        return cleaned_data, issues
+    
+    return data, issues
+
+def downsample_data(data: pd.DataFrame, max_rows: int, chart_type: str) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Downsample data for performance if needed.
+    
+    Args:
+        data: Input DataFrame
+        max_rows: Maximum number of rows to keep
+        chart_type: Type of chart being created
+        
+    Returns:
+        Tuple of (potentially downsampled DataFrame, list of processing notes)
+    """
+    issues = []
+    
+    if len(data) <= max_rows:
+        return data, issues
+    
+    # Only downsample for scatter/line charts to avoid overplotting
+    if chart_type in ['scatter', 'line']:
+        # Use fixed seed for reproducible sampling
+        sampled_data = data.sample(n=max_rows, random_state=RANDOM_SEED)
+        issues.append(f"Sampled {max_rows:,} of {len(data):,} rows to avoid overplotting")
+        return sampled_data, issues
+    
+    return data, issues
+
 def create_chart(data: pd.DataFrame, chart_type: str, **kwargs) -> Tuple[Any, str]:
     """
-    Create a chart based on data and chart type.
+    Create a chart based on data and chart type with hardening features.
     
     Args:
         data: DataFrame containing the data
@@ -179,12 +306,36 @@ def create_chart(data: pd.DataFrame, chart_type: str, **kwargs) -> Tuple[Any, st
     Returns:
         Tuple of (matplotlib figure, caption)
     """
-    # Set consistent style
-    plt.style.use('default')
-    sns.set_palette("husl")
+    # Handle NaN values first
+    data, nan_issues = handle_nans(data)
     
-    # Create figure with appropriate size
-    fig, ax = plt.subplots(figsize=(10, 6), dpi=100)
+    if data.empty:
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=100)
+        ax.text(0.5, 0.5, 'No data available after cleaning', 
+                ha='center', va='center', transform=ax.transAxes, fontsize=12)
+        ax.set_title('No Data')
+        return fig, "No data available for visualization"
+    
+    # Downsample data if needed
+    data, sample_issues = downsample_data(data, MAX_SCATTER_ROWS, chart_type)
+    
+    # Combine issues from processing
+    processing_notes = nan_issues + sample_issues
+    
+    # Validate pixel budget for figure size
+    fig_width, fig_height = 10, 6
+    dpi = 100
+    
+    try:
+        validate_pixel_budget(fig_width, fig_height, dpi)
+    except ValueError as e:
+        # Use smaller default size if budget exceeded
+        fig_width, fig_height = 8, 5
+        dpi = 80
+        processing_notes.append("Reduced image size to stay within pixel budget")
+    
+    # Create figure with validated dimensions
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=dpi)
     
     try:
         if chart_type == 'bar':
@@ -210,18 +361,34 @@ def create_chart(data: pd.DataFrame, chart_type: str, **kwargs) -> Tuple[Any, st
         return fig, f"Fallback chart showing {len(data)} rows of data"
 
 def _create_bar_chart(data: pd.DataFrame, fig: Any, ax: Any) -> Tuple[Any, str]:
-    """Create a bar chart from data."""
+    """Create a bar chart from data with category capping."""
+    additional_notes = []
+    
     if len(data.columns) == 1:
         # Single column - show value counts
         col_name = data.columns[0]
         if data[col_name].dtype in ['object', 'category']:
-            value_counts = data[col_name].value_counts().head(20)  # Limit to top 20
+            value_counts = data[col_name].value_counts()
+            
+            # Cap categories at MAX_CATEGORIES
+            if len(value_counts) > MAX_CATEGORIES:
+                top_categories = value_counts.head(MAX_CATEGORIES)
+                remaining_count = len(value_counts) - MAX_CATEGORIES
+                additional_notes.append(f"+{remaining_count} more categories")
+                value_counts = top_categories
+                
             ax.bar(range(len(value_counts)), value_counts.values.tolist())
             ax.set_xticks(range(len(value_counts)))
             ax.set_xticklabels(value_counts.index, rotation=45, ha='right')
             ax.set_ylabel('Count')
-            ax.set_title(f'Count of {col_name}')
+            title = f'Count of {col_name}'
+            if additional_notes:
+                title += f" (top {MAX_CATEGORIES})"
+            ax.set_title(title)
+            
             caption = f"Bar chart showing counts of {col_name} values"
+            if additional_notes:
+                caption += f" ({', '.join(additional_notes)})"
         else:
             # Numeric data - create bins
             ax.hist(data[col_name].dropna(), bins=20, alpha=0.7)
@@ -242,13 +409,28 @@ def _create_bar_chart(data: pd.DataFrame, fig: Any, ax: Any) -> Tuple[Any, str]:
                 numeric_col = col
         
         if categorical_col and numeric_col:
-            grouped = data.groupby(categorical_col)[numeric_col].mean().head(20)
+            grouped = data.groupby(categorical_col)[numeric_col].mean()
+            
+            # Cap categories at MAX_CATEGORIES
+            if len(grouped) > MAX_CATEGORIES:
+                # Sort by value and take top N
+                top_groups = grouped.nlargest(MAX_CATEGORIES)
+                remaining_count = len(grouped) - MAX_CATEGORIES
+                additional_notes.append(f"+{remaining_count} more categories")
+                grouped = top_groups
+            
             ax.bar(range(len(grouped)), grouped.values.tolist())
             ax.set_xticks(range(len(grouped)))
             ax.set_xticklabels(grouped.index, rotation=45, ha='right')
             ax.set_ylabel(numeric_col)
-            ax.set_title(f'{numeric_col} by {categorical_col}')
+            title = f'{numeric_col} by {categorical_col}'
+            if additional_notes:
+                title += f" (top {MAX_CATEGORIES})"
+            ax.set_title(title)
+            
             caption = f"Bar chart showing average {numeric_col} by {categorical_col}"
+            if additional_notes:
+                caption += f" ({', '.join(additional_notes)})"
         else:
             # Fallback - show first numeric column
             numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
@@ -268,13 +450,14 @@ def _create_bar_chart(data: pd.DataFrame, fig: Any, ax: Any) -> Tuple[Any, str]:
     return fig, caption
 
 def _create_line_chart(data: pd.DataFrame, fig: Any, ax: Any) -> Tuple[Any, str]:
-    """Create a line chart from data."""
+    """Create a line chart from data with differentiated markers."""
     numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
     
     if len(numeric_cols) >= 2:
-        # Plot first two numeric columns
+        # Plot first two numeric columns with distinct markers
         x_col, y_col = numeric_cols[0], numeric_cols[1]
-        ax.plot(data[x_col], data[y_col], marker='o', alpha=0.7)
+        ax.plot(data[x_col], data[y_col], marker='o', linestyle='-', 
+                markersize=4, linewidth=2, alpha=0.7)
         ax.set_xlabel(x_col)
         ax.set_ylabel(y_col)
         ax.set_title(f'{y_col} vs {x_col}')
@@ -296,12 +479,12 @@ def _create_line_chart(data: pd.DataFrame, fig: Any, ax: Any) -> Tuple[Any, str]
     return fig, caption
 
 def _create_scatter_chart(data: pd.DataFrame, fig: Any, ax: Any) -> Tuple[Any, str]:
-    """Create a scatter plot from data."""
+    """Create a scatter plot from data with enhanced markers."""
     numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
     
     if len(numeric_cols) >= 2:
         x_col, y_col = numeric_cols[0], numeric_cols[1]
-        ax.scatter(data[x_col], data[y_col], alpha=0.6)
+        ax.scatter(data[x_col], data[y_col], alpha=0.6, s=30, edgecolors='black', linewidth=0.5)
         ax.set_xlabel(x_col)
         ax.set_ylabel(y_col)
         ax.set_title(f'{y_col} vs {x_col}')
@@ -423,18 +606,36 @@ def render_chart(
                 with memory_limit_handler(MAX_MEMORY):
                     fig, caption = create_chart(df, chart_type, x=x, y=y, series=series, **kwargs)
                     
-                    # Convert to PNG bytes
+                    # Convert to PNG bytes - BytesIO only, never to disk
                     img_buffer = io.BytesIO()
+                    
+                    # Validate that we're using BytesIO (safety check)
+                    assert isinstance(img_buffer, io.BytesIO), "Must save to BytesIO buffer only"
+                    
                     fig.savefig(img_buffer, format='png', bbox_inches='tight', 
-                              dpi=100, facecolor='white', edgecolor='none')
+                              dpi=min(fig.dpi, MAX_DPI), facecolor='white', edgecolor='none')
                     img_buffer.seek(0)
                     
+                    # Check PNG size before encoding
+                    png_bytes = img_buffer.getvalue()
+                    png_size = len(png_bytes)
+                    
+                    if png_size > MAX_PNG_SIZE:
+                        raise ValueError(
+                            f"Generated PNG too large: {png_size / (1024*1024):.1f}MB > "
+                            f"{MAX_PNG_SIZE / (1024*1024):.1f}MB limit. "
+                            f"Try fewer series or smaller data range."
+                        )
+                    
                     # Encode as base64
-                    img_data = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+                    img_data = base64.b64encode(png_bytes).decode('utf-8')
                     
                     # Get image dimensions
                     width, height = fig.get_size_inches() * fig.dpi
                     dimensions = (int(width), int(height))
+                    
+                    # Sanitize caption for safety
+                    safe_caption = sanitize_caption(caption)
                     
                     # Clean up
                     plt.close(fig)
@@ -444,9 +645,10 @@ def render_chart(
                     data_summary = {
                         "rows": len(df),
                         "columns": len(df.columns),
-                        "chart_title": caption,
+                        "chart_title": safe_caption,
                         "numeric_columns": len(df.select_dtypes(include=[np.number]).columns),
-                        "categorical_columns": len(df.select_dtypes(include=['object', 'category']).columns)
+                        "categorical_columns": len(df.select_dtypes(include=['object', 'category']).columns),
+                        "file_size_bytes": png_size
                     }
                     
                     logger.info(f"Chart generation successful [correlation_id={correlation_id}]")
@@ -455,13 +657,14 @@ def render_chart(
                         success=True,
                         image_data=img_data,
                         image_format="png",
-                        caption=caption,
+                        caption=safe_caption,
                         chart_type=chart_type,
                         dimensions=dimensions,
                         data_summary=data_summary,
                         issues=issues,
                         correlation_id=correlation_id,
-                        generated_at=datetime.now()
+                        generated_at=datetime.now(),
+                        file_size_bytes=png_size
                     )
                     
             except MemoryError as e:
@@ -488,11 +691,12 @@ def render_chart(
         success=False,
         image_data=None,
         image_format="png",
-        caption="Chart generation failed",
+        caption=sanitize_caption("Chart generation failed"),
         chart_type=chart_type or "unknown",
         dimensions=(0, 0),
         data_summary={"rows": len(df) if 'df' in locals() else 0, "columns": len(df.columns) if 'df' in locals() else 0},
         issues=issues,
         correlation_id=correlation_id,
-        generated_at=datetime.now()
+        generated_at=datetime.now(),
+        file_size_bytes=0
     )

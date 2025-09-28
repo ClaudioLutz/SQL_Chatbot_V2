@@ -3,7 +3,7 @@
 **Epic:** E3 - Visualization Sandbox Epic  
 **Priority:** P1  
 **Labels:** `epic:E3`, `type:story`, `prio:P1`, `security`  
-**Status:** Ready for Review
+**Status:** Code Review
 
 ## Context
 
@@ -171,6 +171,20 @@ test_cases = [
     pd.DataFrame({'Category': ['A', 'B', 'C'], 'Sales': [100, 200, 150]})
 ]
 ```
+
+## Code Review Notes
+
+**Branch:** feat/004-viz-sandbox-skeleton  
+**Base:** visualisation  
+**Review Status:** Ready for Code Review  
+**Integration Points:** Provides `/api/render` endpoint for Story 005 UI integration
+
+### Review Checklist
+- [ ] Security sandbox implementation verified
+- [ ] Resource limits properly enforced  
+- [ ] API contract matches Story 005 integration needs
+- [ ] CI headless rendering confirmed
+- [ ] Performance benchmarks within acceptable range
 
 ## Dev Agent Record
 

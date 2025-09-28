@@ -5,6 +5,13 @@
 **Labels:** `epic:E4`, `type:story`, `prio:P1`, `a11y`  
 **Status:** Ready  
 
+## API Integration Status
+✅ **Ready for Development** - Backend APIs now available:
+- `/api/generate` - LLM to SQL conversion endpoint (Story 003 complete)
+- `/api/render` - Chart generation endpoint (Story 004 in Code Review)
+
+WIP Limit: Respected - Story 005 can proceed with API integration testing
+
 ## Context
 
 Build the main user interface shell with a three-tab layout (Chart | Details | Data) implementing WAI-ARIA manual-activation pattern for accessibility. Include a progress stepper showing the LLM→SQL→Execute→Render pipeline, download functionality for CSV/PNG, and integration points for backend APIs.
