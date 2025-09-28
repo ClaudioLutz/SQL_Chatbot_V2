@@ -8,6 +8,7 @@ load_dotenv()
 
 # Configuration from environment variables
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5")  # set to your provisioned GPT-5 model
 DB_CONNECTION_STRING = os.environ.get(
     "DB_CONNECTION_STRING",
     "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1433;DATABASE=AdventureWorks2022;UID=sa;PWD=YourStrong!Passw0rd;Encrypt=Yes;TrustServerCertificate=Yes"
@@ -46,56 +47,51 @@ async def get_sql_from_gpt(question: str) -> str:
     
     # AdventureWorks database schema context
     schema_context = """
-    You are a SQL expert working with the AdventureWorks2022 database. Here are the key tables and their relationships:
-    
+    You are a SQL expert for the AdventureWorks2022 SQL Server database.
+    Rules:
+      - Return **only** a single SQL SELECT statement. No markdown, no comments, no prose.
+      - Use SQL Server syntax (TOP n, CONVERT/CAST, GETDATE(), etc.). Never use LIMIT.
+      - If the user asks "how many ...", use COUNT(*) and alias the column clearly (e.g., AS EmployeeCount).
+      - Employees live in HumanResources.Employee. Names/emails live in Person.* tables.
+      - Prefer exact joins on keys (e.g., BusinessEntityID) and fully-qualify schema names (Person.Person).
+      - Reject non-SELECT operations (INSERT/UPDATE/DELETE/DDL).
+
+    Key tables (not exhaustive):
     PERSON TABLES:
-    - Person.Person (BusinessEntityID, FirstName, LastName, EmailPromotion, etc.)
-    - Person.EmailAddress (BusinessEntityID, EmailAddress)
-    - Person.Address (AddressID, AddressLine1, City, StateProvinceID, PostalCode)
-    
+      - Person.Person (BusinessEntityID, FirstName, LastName, EmailPromotion, etc.)
+      - Person.EmailAddress (BusinessEntityID, EmailAddress)
+      - Person.Address (AddressID, AddressLine1, City, StateProvinceID, PostalCode)
     PRODUCT TABLES:
-    - Production.Product (ProductID, Name, ProductNumber, Color, Size, Weight, ListPrice, etc.)
-    - Production.ProductCategory (ProductCategoryID, Name)
-    - Production.ProductSubcategory (ProductSubcategoryID, Name, ProductCategoryID)
-    
+      - Production.Product (...), Production.ProductCategory, Production.ProductSubcategory
     SALES TABLES:
-    - Sales.SalesOrderHeader (SalesOrderID, OrderDate, CustomerID, TotalDue, etc.)
-    - Sales.SalesOrderDetail (SalesOrderID, ProductID, OrderQty, UnitPrice, LineTotal)
-    - Sales.Customer (CustomerID, PersonID, StoreID)
-    
+      - Sales.SalesOrderHeader, Sales.SalesOrderDetail, Sales.Customer
     EMPLOYEE TABLES:
-    - HumanResources.Employee (BusinessEntityID, JobTitle, HireDate, etc.)
-    - HumanResources.Department (DepartmentID, Name)
-    
-    Always use proper SQL Server syntax with TOP instead of LIMIT, and include appropriate JOINs when needed.
-    Return ONLY the SQL query, no explanations or markdown formatting.
+      - HumanResources.Employee (BusinessEntityID, JobTitle, HireDate, etc.)
+      - HumanResources.Department (DepartmentID, Name)
     """
     
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model=OPENAI_MODEL,
             messages=[
-                {
-                    "role": "system", 
-                    "content": schema_context
-                },
-                {
-                    "role": "user", 
-                    "content": f"Convert this question to a SQL query: {question}"
-                }
+                {"role": "system", "content": schema_context},
+                {"role": "user", "content": 
+                  f"Convert the user question to ONE valid SQL Server SELECT statement. "
+                  f"Do not include markdown. Question: {question}"}
             ],
-            max_tokens=200,
-            temperature=0.1
+            max_completion_tokens=200
         )
         
-        sql_query = response.choices[0].message.content
+        sql_query = (response.choices[0].message.content or "").strip()
         if sql_query is None:
             sql_query = "SELECT TOP 10 FirstName, LastName FROM Person.Person ORDER BY LastName;"
         else:
             sql_query = sql_query.strip()
-            # Clean up the response - remove any markdown formatting
-            if sql_query.startswith("```sql"):
-                sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+            # Remove code fences / markdown if any:
+            sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+            # Enforce SELECT-only:
+            if not sql_query.lower().startswith("select"):
+                raise ValueError("LLM returned a non-SELECT statement")
         
         print(f"Generated SQL: {sql_query}")
         return sql_query

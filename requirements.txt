@@ -1,3 +1,5 @@
 fastapi
 uvicorn
 pyodbc
+openai
+python-dotenv
