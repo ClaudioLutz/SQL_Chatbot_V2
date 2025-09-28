@@ -1,5 +1,9 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pyodbc
 openai
 python-dotenv
+pydantic-settings
+pytest
+pytest-asyncio
+httpx

@@ -3,7 +3,10 @@
 **Epic:** E1 - SQL Safety Layer Epic  
 **Priority:** P1  
 **Labels:** `epic:E1`, `type:story`, `prio:P1`, `security`  
-**Status:** Ready  
+**Status:** Blocked  
+**Blocked By:** Story 001 (Backend Foundation)  
+**Board:** SQL Chatbot — Visualisation (Sprint 1)  
+**Column:** Backlog  
 
 ## Context
 

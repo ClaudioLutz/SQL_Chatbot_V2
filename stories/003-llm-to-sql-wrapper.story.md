@@ -3,7 +3,10 @@
 **Epic:** E2 - LLM SQL Tooling Epic  
 **Priority:** P1  
 **Labels:** `epic:E2`, `type:story`, `prio:P1`  
-**Status:** Ready  
+**Status:** Blocked  
+**Blocked By:** Story 001 (Backend Foundation)  
+**Board:** SQL Chatbot — Visualisation (Sprint 1)  
+**Column:** Backlog  
 
 ## Context
 

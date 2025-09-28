@@ -1,26 +1,19 @@
-import os
 import pyodbc
 import traceback
-from dotenv import load_dotenv
+import logging
 from openai import OpenAI
 
-# Load environment variables from .env file
-load_dotenv()
+from .config import settings
 
-# Configuration from environment variables
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4")
-DB_CONNECTION_STRING = os.environ.get(
-    "DB_CONNECTION_STRING",
-    "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1433;DATABASE=AdventureWorks2022;UID=sa;PWD=YourStrong!Passw0rd;Encrypt=Yes;TrustServerCertificate=Yes"
-)
+# Configure logger
+logger = logging.getLogger(__name__)
 
-# Validate required environment variables
-if not OPENAI_API_KEY:
+# Validate required configuration
+if not settings.openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable is required")
 
 # Initialize OpenAI client
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=settings.openai_api_key)
 
 
 def _is_safe_select(sql: str) -> bool:
@@ -69,14 +62,14 @@ def execute_sql_query(sql_query: str) -> dict:
     results = []
     columns = []
     try:
-        with pyodbc.connect(DB_CONNECTION_STRING) as cnxn:
+        with pyodbc.connect(settings.database_connection_string) as cnxn:
             cursor = cnxn.cursor()
             cursor.execute(sql_query)
             columns = [column[0] for column in cursor.description]
             for row in cursor.fetchall():
                 results.append(dict(zip(columns, row)))
     except Exception as e:
-        print(f"Database query failed: {e}")
+        logger.error(f"Database query failed: {e}")
         return {"error": str(e)}
 
     return {"columns": columns, "rows": results}
@@ -134,7 +127,7 @@ async def get_sql_from_gpt(question: str) -> str:
     
     try:
         response = client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=settings.openai_model,
             messages=[
                 {"role": "system", "content": schema_context},
                 {"role": "user", "content": f"Question: {question}"}
