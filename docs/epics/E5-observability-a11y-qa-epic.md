@@ -88,7 +88,7 @@ Establish comprehensive production readiness validation through observability in
 **AC-A11Y-02:** Keyboard navigation testing verifies complete functionality access without mouse
 **AC-A11Y-03:** Screen reader compatibility validated with NVDA, JAWS, and VoiceOver testing
 **AC-A11Y-04:** Color contrast validation confirms ≥4.5:1 ratios for all text elements
-**AC-A11Y-05:** Touch target validation ensures ≥44x44px minimum size for all interactive elements
+**AC-A11Y-05:** Touch target validation ensures WCAG 2.2 AA Target Size minimum (≥24×24 CSS pixels) with ≥44×44px recommended for enhanced touch accessibility
 
 ## DORA Metrics Targets
 

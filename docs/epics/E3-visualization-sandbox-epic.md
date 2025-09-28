@@ -21,7 +21,7 @@ Implement secure visualization rendering environment with matplotlib/seaborn sup
 ## Stories
 
 1. **Story E3.1:** Headless Matplotlib/Seaborn Foundation
-   - Implement headless Agg backend for server-side chart generation without display requirements
+   - Implement headless Agg backend for server-side chart generation (set MPLBACKEND=Agg environment variable or matplotlib.use("Agg") to prevent display crashes)
    - Integrate matplotlib and seaborn with colorblind-accessible default palettes (seaborn colorblind theme)
    - Create chart generation pipeline from SQL result sets to PNG output with descriptive captions
 

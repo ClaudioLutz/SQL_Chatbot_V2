@@ -21,9 +21,9 @@ Transform the basic HTML interface into a comprehensive accessible "Visualize" w
 ## Stories
 
 1. **Story E4.1:** WAI-ARIA Tabbed Interface & Progress Stepper
-   - Implement tabs following WAI-ARIA Authoring Practices with manual activation and roving tabindex
+   - Implement tabs following WAI-ARIA Authoring Practices with manual activation pattern (Tab/Arrow keys to focus, Enter/Space to activate) and roving tabindex
    - Create progressive stepper showing LLM→SQL→Execute→Render stages with ARIA live regions
-   - Build keyboard navigation supporting Tab, Arrow keys, Enter/Space activation per accessibility standards
+   - Build keyboard navigation supporting APG manual activation: Tab to focus tabs, Arrow keys to navigate, Enter/Space to activate per accessibility standards
 
 2. **Story E4.2:** Chart, Details & Data Tab Content
    - Design Chart tab with PNG visualization display, descriptive captions, and zoom/accessibility features
@@ -79,7 +79,7 @@ Transform the basic HTML interface into a comprehensive accessible "Visualize" w
 **AC-UI-A11Y-01:** Tab key navigation moves through tabs in logical order, arrow keys switch between tabs, Enter/Space activate tabs
 **AC-UI-A11Y-02:** Progress stepper announces "Generating SQL query..." via aria-live="polite" during LLM processing
 **AC-UI-A11Y-03:** Chart images include alt text with descriptive captions explaining data insights
-**AC-UI-A11Y-04:** All interactive elements meet 44x44px minimum target size for touch accessibility
+**AC-UI-A11Y-04:** All interactive elements meet WCAG 2.2 AA Target Size minimum (24×24 CSS pixels), with 44×44px target for improved touch accessibility
 **AC-UI-A11Y-05:** Color contrast meets WCAG AA (≥4.5:1 for normal text, ≥3:1 for large text)
 
 ## User Experience Acceptance Criteria

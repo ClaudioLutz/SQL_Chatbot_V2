@@ -31,9 +31,10 @@ Establish robust development foundation and infrastructure runway to enable all 
    - Set up automated linting, type checking, and security validation
 
 3. **Story E0.3:** Secure ODBC 18+ Database Connectivity
-   - Enhance existing database connection with configurable TLS options (Encrypt=Yes, TrustServerCertificate)
-   - Implement connection pooling and error handling improvements
+   - Enhance existing database connection with configurable TLS options (Encrypt=Yes by default, TrustServerCertificate=Yes for dev with self-signed certs)
+   - Implement connection pooling and error handling improvements  
    - Create database schema validation and least-privilege service account setup
+   - Document ODBC 18+ TLS defaults and provide dev/prod connection string guidance to prevent SSL errors
 
 ## Dependencies
 

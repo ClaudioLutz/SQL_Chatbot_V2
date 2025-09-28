@@ -27,7 +27,7 @@ Establish comprehensive SQL safety and security layer that prevents SQL injectio
 
 2. **Story E1.2:** SQL Statement Validation & Security Controls
    - Develop comprehensive SQL validator rejecting non-SELECT, DDL/DML operations, cross-database references
-   - Implement T-SQL compliance enforcement (TOP/OFFSET...FETCH, mandatory ORDER BY validation)
+   - Implement T-SQL compliance enforcement (TOP/OFFSET...FETCH, mandatory ORDER BY with unique tiebreaker validation)
    - Add banned keywords filter and cartesian join detection with row limits
 
 3. **Story E1.3:** Query Resource Controls & Error Handling
@@ -77,6 +77,6 @@ Establish comprehensive SQL safety and security layer that prevents SQL injectio
 
 **AC-SQL-SAFETY-01:** Attempting "DROP TABLE" operations results in immediate rejection with error "DDL operations not permitted"
 **AC-SQL-SAFETY-02:** Queries accessing non-allow-listed objects fail with "Object not in approved schema" error  
-**AC-SQL-SAFETY-03:** T-SQL pagination without ORDER BY fails with "ORDER BY required for deterministic results" guidance
+**AC-SQL-SAFETY-03:** T-SQL pagination without ORDER BY and unique tiebreaker fails with "ORDER BY with unique column (e.g., PRIMARY KEY) required for deterministic results" guidance
 **AC-SQL-SAFETY-04:** Query execution exceeding timeout limits terminates gracefully with retry suggestions
 **AC-SQL-SAFETY-05:** Row caps prevent result sets exceeding configured limits with pagination guidance
