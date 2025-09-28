@@ -8,6 +8,7 @@ import pyodbc
 from .config import settings
 from .middleware import RequestIDMiddleware, get_request_id
 from . import services
+from .routes.generate import router as generate_router
 
 # Configure logging
 logging.basicConfig(level=settings.log_level)
@@ -32,6 +33,9 @@ app.add_middleware(
 
 # Add Request ID middleware
 app.add_middleware(RequestIDMiddleware)
+
+# Include routers
+app.include_router(generate_router)
 
 
 class QueryRequest(BaseModel):
