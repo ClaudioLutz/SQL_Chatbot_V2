@@ -244,32 +244,18 @@ class TestSqlGenerator:
     @pytest.mark.asyncio
     async def test_sql_cleanup(self):
         """Test SQL cleanup functionality (removing code blocks, adding semicolons)."""
+        # Test the _ensure_single_statement method directly
         test_cases = [
             ("```sql\nSELECT 1\n```", "SELECT 1;"),
             ("```\nSELECT 1\n```", "SELECT 1;"),
             ("SELECT 1", "SELECT 1;"),
             ("SELECT 1;", "SELECT 1;"),  # Already has semicolon
+            ("SELECT 1; SELECT 2;", "SELECT 1;"),  # Multi-statement test
         ]
         
         for input_sql, expected_sql in test_cases:
-            # Mock OpenAI response
-            mock_response = MagicMock()
-            mock_choice = MagicMock()
-            mock_choice.message.content = input_sql
-            mock_response.choices = [mock_choice]
-            self.mock_client.chat.completions.create.return_value = mock_response
-            
-            # Mock validation success
-            with patch('app.llm.sql_generator.validate_sql') as mock_validate:
-                mock_validate.return_value = ValidationResult(ok=True, issues=[], objects=set())
-                
-                result = await self.generator.generate_sql(
-                    prompt="test",
-                    page=1,
-                    page_size=20
-                )
-                
-                assert result.sql == expected_sql
+            cleaned_sql = self.generator._ensure_single_statement(input_sql)
+            assert cleaned_sql == expected_sql
     
     @pytest.mark.asyncio
     async def test_correlation_id_tracking(self):

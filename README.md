@@ -30,9 +30,11 @@ SQL_TIMEOUT_SECONDS=30
 from app.validation.sql_validator import validate_sql
 from app.config import settings
 
-# Validate a SQL query
+# Validate a SQL query (max_rows parameter is optional with default 5000)
 sql = "SELECT TOP 10 * FROM Production.Product ORDER BY ProductID"
-result = validate_sql(sql, settings.sql_allowlist_set, settings.sql_max_rows)
+result = validate_sql(sql, settings.sql_allowlist_set)  # 2-arg usage
+# OR with explicit max_rows:
+# result = validate_sql(sql, settings.sql_allowlist_set, settings.sql_max_rows)
 
 if result.ok:
     print("Query is valid!")
@@ -41,6 +43,75 @@ else:
     print("Query validation failed:")
     for issue in result.issues:
         print(f"  {issue.code}: {issue.message}")
+```
+
+## LLM to SQL Generation API
+
+The application provides an API endpoint for converting natural language to T-SQL queries with validation and execution.
+
+### Endpoint: `/api/generate`
+
+**Method**: POST  
+**Content-Type**: application/json
+
+**Request Body**:
+```json
+{
+  "prompt": "Show me the top 10 products by price",
+  "page": 1,
+  "page_size": 20
+}
+```
+
+**Success Response** (200 OK):
+```json
+{
+  "sql": "SELECT ProductID, Name, ListPrice FROM Production.Product ORDER BY ListPrice DESC, ProductID ASC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY;",
+  "columns": [
+    {"name": "ProductID", "type": "int"},
+    {"name": "Name", "type": "nvarchar"},
+    {"name": "ListPrice", "type": "money"}
+  ],
+  "rows": [
+    [776, "Road-650 Black, 58", 782.99],
+    [777, "Road-650 Black, 60", 782.99]
+  ],
+  "page": 1,
+  "page_size": 20,
+  "meta": {
+    "correlation_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "validated": true,
+    "repair_attempts": 0,
+    "model": "gpt-4",
+    "validation_passed": true,
+    "row_count": 2
+  }
+}
+```
+
+**Error Response** (400/422/500):
+```json
+{
+  "error": "SQL_VALIDATION_FAILED",
+  "issues": ["ORDER BY required for deterministic results"],
+  "meta": {
+    "correlation_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "validation_passed": false,
+    "repair_attempts": 3
+  }
+}
+```
+
+### Example Usage
+
+```bash
+curl -s -X POST http://localhost:8000/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "prompt": "Top 10 products by ListPrice with name and price",
+        "page": 1,
+        "page_size": 10
+      }' | jq .
 ```
 
 ### Common Rejections

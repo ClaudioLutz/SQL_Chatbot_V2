@@ -2,7 +2,7 @@
 LLM-powered SQL generation service for converting natural language to T-SQL.
 
 This module handles:
-- OpenAI GPT-5 integration for SQL generation
+- OpenAI GPT integration for SQL generation (configurable model)
 - Schema context building for AdventureWorks database
 - Error repair through iterative prompting
 - T-SQL dialect enforcement with proper pagination patterns
@@ -11,9 +11,10 @@ This module handles:
 import asyncio
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 import openai
@@ -47,12 +48,16 @@ class RepairAttempt:
 
 
 class SqlGenerator:
-    """T-SQL generator using OpenAI GPT-5 with schema context and error repair."""
+    """T-SQL generator using OpenAI GPT with schema context and error repair."""
     
     def __init__(self):
         self.client = AsyncOpenAI(api_key=settings.openai_api_key)
         self.max_repair_attempts = 3
-        self.request_timeout = 30
+        self.model = settings.openai_model
+        self.temperature = settings.openai_temperature
+        self.max_tokens = settings.openai_max_tokens
+        self.request_timeout = settings.openai_request_timeout
+        self.max_retries = settings.openai_max_retries
         
         # AdventureWorks schema context - key tables and columns
         self.schema_context = {
@@ -402,6 +407,61 @@ REPAIR CONSTRAINTS:
 
 Generate the corrected T-SQL query following all the original requirements."""
 
+    async def _make_openai_request(self, messages: List[Dict[str, Any]], **kwargs) -> str:
+        """Make OpenAI request with retry logic."""
+        last_exception = None
+        
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    timeout=self.request_timeout,
+                    **kwargs
+                )
+                
+                content = response.choices[0].message.content
+                return content if content is not None else ""
+                
+            except Exception as e:
+                last_exception = e
+                if attempt < self.max_retries:
+                    wait_time = (2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+                    logger.warning(f"OpenAI request attempt {attempt + 1} failed, retrying in {wait_time}s: {e}")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"OpenAI request failed after {self.max_retries + 1} attempts: {e}")
+                    
+        # If we get here, last_exception should be set, but provide fallback
+        if last_exception:
+            raise last_exception
+        else:
+            raise RuntimeError("OpenAI request failed with unknown error")
+
+    def _ensure_single_statement(self, sql: str) -> str:
+        """Ensure SQL contains only a single statement."""
+        # Remove code block markers if present
+        if sql.startswith("```sql"):
+            sql = sql[6:]
+        if sql.startswith("```"):
+            sql = sql[3:]
+        if sql.endswith("```"):
+            sql = sql[:-3]
+        
+        sql = sql.strip()
+        
+        # Split by semicolon and take only the first statement
+        statements = sql.split(';')
+        first_statement = statements[0].strip()
+        
+        # Ensure it ends with semicolon
+        if not first_statement.endswith(';'):
+            first_statement += ';'
+            
+        return first_statement
+
     async def generate_sql(
         self,
         prompt: str,
@@ -414,6 +474,10 @@ Generate the corrected T-SQL query following all the original requirements."""
         start_time = datetime.now()
         
         logger.info(f"Starting SQL generation for prompt: '{prompt[:100]}...' [correlation_id={correlation_id}]")
+        
+        # Use allowlist from settings if not provided
+        if allowed_tables is None:
+            allowed_tables = list(settings.sql_allowlist_set)
         
         # Calculate pagination offset
         offset = (page - 1) * page_size
@@ -454,25 +518,20 @@ Example response format:
   "pagination": {{"offset": {offset}, "fetch_next": {page_size}}}
 }}"""
 
-            response = await self.client.chat.completions.create(
-                model="gpt-4",
+            response_content = await self._make_openai_request(
                 messages=[
                     {"role": "system", "content": structured_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                response_format={"type": "json_object"},
-                max_tokens=800,
-                temperature=0.1,
-                timeout=self.request_timeout
+                response_format={"type": "json_object"}
             )
             
-            response_content = response.choices[0].message.content
-            if response_content is None:
+            if not response_content:
                 return SqlGenResult(
                     sql="",
                     issues=["Empty response from OpenAI API"],
                     meta={
-                        "model": "gpt-4",
+                        "model": self.model,
                         "repair_attempts": 0,
                         "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                         "validation_passed": False,
@@ -487,6 +546,8 @@ Example response format:
             try:
                 structure = json.loads(response_content)
                 generated_sql = self._render_sql_from_structure(structure)
+                # Ensure single statement
+                generated_sql = self._ensure_single_statement(generated_sql)
                 logger.info(f"Generated SQL from structured output [correlation_id={correlation_id}]: {generated_sql[:200]}...")
             
             except (json.JSONDecodeError, ValueError) as e:
@@ -495,7 +556,7 @@ Example response format:
                     sql="",
                     issues=[f"Failed to parse structured output: {str(e)}"],
                     meta={
-                        "model": "gpt-4",
+                        "model": self.model,
                         "repair_attempts": 0,
                         "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                         "validation_passed": False,
@@ -508,7 +569,7 @@ Example response format:
                 )
             
             # Create allowlist for validation
-            allowlist_set = set(allowed_tables) if allowed_tables else set(self.schema_context.keys())
+            allowlist_set = set(allowed_tables)
             
             # Validate the generated SQL
             validation_result = validate_sql(generated_sql, allowlist_set)
@@ -519,7 +580,7 @@ Example response format:
                     sql=generated_sql,
                     issues=[],
                     meta={
-                        "model": "gpt-4",
+                        "model": self.model,
                         "repair_attempts": 0,
                         "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                         "validation_passed": True,
@@ -545,22 +606,12 @@ Example response format:
                     [issue.message for issue in validation_result.issues]
                 )
                 
-                repair_response = await self.client.chat.completions.create(
-                    model="gpt-4",
+                repaired_sql = await self._make_openai_request(
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": repair_prompt}
-                    ],
-                    max_tokens=500,
-                    temperature=0.1,
-                    timeout=self.request_timeout
+                    ]
                 )
-                
-                repaired_sql = repair_response.choices[0].message.content
-                if repaired_sql is None:
-                    repaired_sql = ""
-                else:
-                    repaired_sql = repaired_sql.strip()
                 
                 if not repaired_sql:
                     # Handle empty repair response
@@ -573,17 +624,8 @@ Example response format:
                     ))
                     continue
                 
-                # Clean up repaired SQL
-                if repaired_sql.startswith("```sql"):
-                    repaired_sql = repaired_sql[6:]
-                if repaired_sql.startswith("```"):
-                    repaired_sql = repaired_sql[3:]
-                if repaired_sql.endswith("```"):
-                    repaired_sql = repaired_sql[:-3]
-                
-                repaired_sql = repaired_sql.strip()
-                if not repaired_sql.endswith(';'):
-                    repaired_sql += ';'
+                # Clean up repaired SQL and ensure single statement
+                repaired_sql = self._ensure_single_statement(repaired_sql)
                 
                 # Validate repaired SQL
                 repair_validation = validate_sql(repaired_sql, allowlist_set)
@@ -602,7 +644,7 @@ Example response format:
                         sql=repaired_sql,
                         issues=[],
                         meta={
-                            "model": "gpt-4",
+                            "model": self.model,
                             "repair_attempts": attempt_num,
                             "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                             "validation_passed": True,
@@ -633,7 +675,7 @@ Example response format:
                 sql=current_sql,
                 issues=issues,
                 meta={
-                    "model": "gpt-4",
+                    "model": self.model,
                     "repair_attempts": self.max_repair_attempts,
                     "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                     "validation_passed": False,
@@ -657,7 +699,7 @@ Example response format:
                 sql="",
                 issues=["Request timeout - OpenAI API took too long to respond"],
                 meta={
-                    "model": "gpt-4",
+                    "model": self.model,
                     "repair_attempts": 0,
                     "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                     "validation_passed": False,
@@ -674,7 +716,7 @@ Example response format:
                 sql="",
                 issues=[f"SQL generation failed: {str(e)}"],
                 meta={
-                    "model": "gpt-4",
+                    "model": self.model,
                     "repair_attempts": 0,
                     "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                     "validation_passed": False,

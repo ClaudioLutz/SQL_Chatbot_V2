@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4"
+    openai_temperature: float = 0.1
+    openai_max_tokens: int = 800
+    openai_request_timeout: int = 30
+    openai_max_retries: int = 2
     
     # Application Configuration
     cors_origins: list[str] = ["http://localhost:3000"]
