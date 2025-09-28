@@ -4,7 +4,7 @@
 **Priority:** P1  
 **Labels:** `epic:E2`, `type:story`, `prio:P1`  
 **Status:** Blocked  
-**Blocked By:** Story 001 (Backend Foundation)  
+**Blocked By:** Story 002 (SQL Validator Baseline)  
 **Board:** SQL Chatbot — Visualisation (Sprint 1)  
 **Column:** Backlog  
 

@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="SQL Chatbot API",
     description="Natural language to SQL query conversion API",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 # Add CORS middleware
@@ -24,7 +26,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -56,7 +58,10 @@ async def database_ping(request: Request):
     logger.info("Database ping requested", extra={"request_id": request_id})
     
     try:
-        with pyodbc.connect(settings.database_connection_string) as conn:
+        with pyodbc.connect(
+            settings.database_connection_string,
+            timeout=settings.db_timeout_seconds
+        ) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT 1 AS test_connection")
             result = cursor.fetchone()

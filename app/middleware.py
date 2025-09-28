@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 import logging
 from typing import Callable
 
+from .config import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +15,9 @@ logger = logging.getLogger(__name__)
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Middleware to add correlation IDs to requests for tracking."""
     
-    def __init__(self, app, header_name: str = "X-Request-ID"):
+    def __init__(self, app):
         super().__init__(app)
-        self.header_name = header_name
+        self.header_name = settings.request_id_header
     
     async def dispatch(self, request: Request, call_next: Callable):
         # Generate or use existing request ID
