@@ -232,3 +232,4 @@ config.ini
 config.cfg
 settings.ini
 local_settings.py
+.env
