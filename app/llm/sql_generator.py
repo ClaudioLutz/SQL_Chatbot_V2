@@ -107,8 +107,107 @@ class SqlGenerator:
             "The multi-part identifier": "Column reference '{column}' is ambiguous. Use proper table aliases"
         }
     
+    def _get_sql_schema(self, allowed_tables: Optional[List[str]] = None) -> Dict:
+        """Define the JSON schema for structured SQL generation."""
+        if not allowed_tables:
+            allowed_tables = list(self.schema_context.keys())
+        
+        # Build available columns for each table
+        table_columns = {}
+        for table_name in allowed_tables:
+            if table_name in self.schema_context:
+                table_columns[table_name] = self.schema_context[table_name]["columns"]
+        
+        return {
+            "name": "generate_structured_sql",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "tables": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "alias": {"type": "string"}
+                            },
+                            "required": ["name"],
+                            "additionalProperties": False
+                        }
+                    },
+                    "columns": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "table": {"type": "string"},
+                                "name": {"type": "string"},
+                                "alias": {"type": "string"},
+                                "function": {"type": "string"}
+                            },
+                            "required": ["name"],
+                            "additionalProperties": False
+                        }
+                    },
+                    "where_conditions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "column": {"type": "string"},
+                                "operator": {"type": "string"},
+                                "value": {"type": "string"},
+                                "logical_connector": {"type": "string"}
+                            },
+                            "required": ["column", "operator", "value"],
+                            "additionalProperties": False
+                        }
+                    },
+                    "joins": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {"type": "string"},
+                                "left_table": {"type": "string"},
+                                "left_column": {"type": "string"},
+                                "right_table": {"type": "string"},
+                                "right_column": {"type": "string"}
+                            },
+                            "required": ["type", "left_table", "left_column", "right_table", "right_column"],
+                            "additionalProperties": False
+                        }
+                    },
+                    "order_by": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "column": {"type": "string"},
+                                "direction": {"type": "string"}
+                            },
+                            "required": ["column", "direction"],
+                            "additionalProperties": False
+                        }
+                    },
+                    "pagination": {
+                        "type": "object",
+                        "properties": {
+                            "offset": {"type": "integer"},
+                            "fetch_next": {"type": "integer"}
+                        },
+                        "required": ["offset", "fetch_next"],
+                        "additionalProperties": False
+                    }
+                },
+                "required": ["tables", "columns", "order_by", "pagination"],
+                "additionalProperties": False
+            }
+        }
+
     def _build_system_prompt(self, allowed_tables: Optional[List[str]] = None) -> str:
-        """Build comprehensive system prompt with schema context."""
+        """Build comprehensive system prompt with schema context (for repairs)."""
         if not allowed_tables:
             allowed_tables = list(self.schema_context.keys())
         
@@ -150,6 +249,119 @@ PAGINATION RULES:
 • Include unique column (usually primary key) in ORDER BY to ensure deterministic results
 
 Generate ONLY the T-SQL query, no explanations or comments."""
+
+    def _build_system_prompt_structured(self, allowed_tables: Optional[List[str]] = None) -> str:
+        """Build system prompt for structured output generation."""
+        if not allowed_tables:
+            allowed_tables = list(self.schema_context.keys())
+        
+        # Build schema information
+        schema_info = []
+        for table_name in allowed_tables:
+            if table_name in self.schema_context:
+                table_info = self.schema_context[table_name]
+                schema_info.append(f"""
+{table_name}:
+  Description: {table_info['description']}
+  Columns: {', '.join(table_info['columns'])}
+  Example: {table_info['sample_data'][0] if table_info['sample_data'] else 'No sample data'}
+""")
+        
+        schema_context = "\n".join(schema_info)
+        allowed_list = ", ".join(allowed_tables)
+        
+        return f"""You are a T-SQL expert working with Microsoft SQL Server 2022 and the AdventureWorks database.
+
+SCHEMA CONTEXT:
+{schema_context}
+
+REQUIREMENTS:
+• Use T-SQL dialect ONLY (Microsoft SQL Server 2022)
+• Use only these allowed tables: {allowed_list}
+• For pagination, ALWAYS use OFFSET/FETCH NEXT pattern
+• ALWAYS include ORDER BY with unique tiebreaker for deterministic results
+• Prefer INNER JOINs over WHERE clause joins
+
+Analyze the user's natural language query and return a structured representation that can be used to build valid T-SQL."""
+
+    def _render_sql_from_structure(self, structure: Dict) -> str:
+        """Render T-SQL from structured JSON representation."""
+        try:
+            # Start building the SELECT statement
+            sql_parts = ["SELECT"]
+            
+            # Build column list
+            column_parts = []
+            for col in structure["columns"]:
+                col_expr = ""
+                if "table" in col and col["table"]:
+                    col_expr = f"{col['table']}.{col['name']}"
+                else:
+                    col_expr = col['name']
+                
+                if "function" in col and col["function"]:
+                    col_expr = f"{col['function']}({col_expr})"
+                
+                if "alias" in col and col["alias"]:
+                    col_expr = f"{col_expr} AS {col['alias']}"
+                
+                column_parts.append(col_expr)
+            
+            sql_parts.append("  " + ", ".join(column_parts))
+            
+            # Build FROM clause
+            sql_parts.append("FROM")
+            from_parts = []
+            for table in structure["tables"]:
+                table_expr = table["name"]
+                if "alias" in table and table["alias"]:
+                    table_expr = f"{table_expr} AS {table['alias']}"
+                from_parts.append(table_expr)
+            
+            sql_parts.append("  " + ", ".join(from_parts))
+            
+            # Build JOINs
+            if "joins" in structure and structure["joins"]:
+                for join in structure["joins"]:
+                    join_clause = f"{join['type'].upper()} JOIN {join['right_table']} ON {join['left_table']}.{join['left_column']} = {join['right_table']}.{join['right_column']}"
+                    sql_parts.append("  " + join_clause)
+            
+            # Build WHERE clause
+            if "where_conditions" in structure and structure["where_conditions"]:
+                sql_parts.append("WHERE")
+                where_parts = []
+                for i, condition in enumerate(structure["where_conditions"]):
+                    condition_expr = f"{condition['column']} {condition['operator']} {condition['value']}"
+                    
+                    if i > 0 and "logical_connector" in condition and condition["logical_connector"]:
+                        condition_expr = f"{condition['logical_connector']} {condition_expr}"
+                    
+                    where_parts.append(condition_expr)
+                
+                sql_parts.append("  " + " ".join(where_parts))
+            
+            # Build ORDER BY (mandatory for OFFSET/FETCH)
+            sql_parts.append("ORDER BY")
+            order_parts = []
+            for order in structure["order_by"]:
+                order_expr = f"{order['column']} {order['direction'].upper()}"
+                order_parts.append(order_expr)
+            
+            sql_parts.append("  " + ", ".join(order_parts))
+            
+            # Build OFFSET/FETCH
+            pagination = structure["pagination"]
+            sql_parts.append(f"OFFSET {pagination['offset']} ROWS")
+            sql_parts.append(f"FETCH NEXT {pagination['fetch_next']} ROWS ONLY")
+            
+            # Join all parts and add semicolon
+            sql = "\n".join(sql_parts) + ";"
+            
+            return sql
+            
+        except Exception as e:
+            logger.error(f"Error rendering SQL from structure: {e}")
+            raise ValueError(f"Failed to render SQL from structure: {str(e)}")
 
     def _build_repair_prompt(self, original_query: str, error_message: str, validation_issues: List[str]) -> str:
         """Build repair prompt based on error patterns."""
@@ -222,25 +434,40 @@ Generate the T-SQL query:"""
         issues = []
         
         try:
-            # Initial generation attempt
+            # Use structured outputs for initial generation
+            sql_schema = self._get_sql_schema(allowed_tables)
+            system_prompt_structured = self._build_system_prompt_structured(allowed_tables)
+            
+            # Update system prompt to include JSON structure requirements
+            structured_prompt = system_prompt_structured + f"""
+
+Return your analysis as a JSON object with this exact structure:
+{json.dumps(sql_schema["schema"], indent=2)}
+
+Example response format:
+{{
+  "tables": [{{"name": "Production.Product", "alias": "p"}}],
+  "columns": [{{"table": "p", "name": "ProductID", "alias": null, "function": null}}],
+  "where_conditions": [],
+  "joins": [],
+  "order_by": [{{"column": "p.ProductID", "direction": "ASC"}}],
+  "pagination": {{"offset": {offset}, "fetch_next": {page_size}}}
+}}"""
+
             response = await self.client.chat.completions.create(
-                model="gpt-4",  # Using GPT-4 as GPT-5 might not be available yet
+                model="gpt-4",
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": structured_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=500,
-                temperature=0.1,  # Low temperature for deterministic SQL
+                response_format={"type": "json_object"},
+                max_tokens=800,
+                temperature=0.1,
                 timeout=self.request_timeout
             )
             
-            generated_sql = response.choices[0].message.content
-            if generated_sql is None:
-                generated_sql = ""
-            else:
-                generated_sql = generated_sql.strip()
-            
-            if not generated_sql:
+            response_content = response.choices[0].message.content
+            if response_content is None:
                 return SqlGenResult(
                     sql="",
                     issues=["Empty response from OpenAI API"],
@@ -249,27 +476,36 @@ Generate the T-SQL query:"""
                         "repair_attempts": 0,
                         "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                         "validation_passed": False,
-                        "error": "empty_response"
+                        "error": "empty_response",
+                        "structured_output": True
                     },
                     correlation_id=correlation_id,
                     generated_at=datetime.now()
                 )
             
-            # Clean up the SQL (remove code block markers if present)
-            if generated_sql.startswith("```sql"):
-                generated_sql = generated_sql[6:]
-            if generated_sql.startswith("```"):
-                generated_sql = generated_sql[3:]
-            if generated_sql.endswith("```"):
-                generated_sql = generated_sql[:-3]
+            # Parse structured response
+            try:
+                structure = json.loads(response_content)
+                generated_sql = self._render_sql_from_structure(structure)
+                logger.info(f"Generated SQL from structured output [correlation_id={correlation_id}]: {generated_sql[:200]}...")
             
-            generated_sql = generated_sql.strip()
-            
-            # Ensure SQL ends with semicolon
-            if not generated_sql.endswith(';'):
-                generated_sql += ';'
-            
-            logger.info(f"Generated initial SQL [correlation_id={correlation_id}]: {generated_sql[:200]}...")
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.error(f"Failed to parse structured output [correlation_id={correlation_id}]: {e}")
+                return SqlGenResult(
+                    sql="",
+                    issues=[f"Failed to parse structured output: {str(e)}"],
+                    meta={
+                        "model": "gpt-4",
+                        "repair_attempts": 0,
+                        "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
+                        "validation_passed": False,
+                        "error": "parse_error",
+                        "structured_output": True,
+                        "raw_response": response_content[:500] + "..." if len(response_content) > 500 else response_content
+                    },
+                    correlation_id=correlation_id,
+                    generated_at=datetime.now()
+                )
             
             # Create allowlist for validation
             allowlist_set = set(allowed_tables) if allowed_tables else set(self.schema_context.keys())
@@ -286,7 +522,9 @@ Generate the T-SQL query:"""
                         "model": "gpt-4",
                         "repair_attempts": 0,
                         "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
-                        "validation_passed": True
+                        "validation_passed": True,
+                        "structured_output": True,
+                        "sql_structure": structure
                     },
                     correlation_id=correlation_id,
                     generated_at=datetime.now()
@@ -368,6 +606,7 @@ Generate the T-SQL query:"""
                             "repair_attempts": attempt_num,
                             "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                             "validation_passed": True,
+                            "structured_output": True,
                             "repair_history": [
                                 {
                                     "attempt": attempt.attempt_number,
@@ -398,6 +637,7 @@ Generate the T-SQL query:"""
                     "repair_attempts": self.max_repair_attempts,
                     "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                     "validation_passed": False,
+                    "structured_output": True,
                     "repair_history": [
                         {
                             "attempt": attempt.attempt_number,
@@ -421,6 +661,7 @@ Generate the T-SQL query:"""
                     "repair_attempts": 0,
                     "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                     "validation_passed": False,
+                    "structured_output": True,
                     "error": "timeout"
                 },
                 correlation_id=correlation_id,
@@ -437,6 +678,7 @@ Generate the T-SQL query:"""
                     "repair_attempts": 0,
                     "generation_time_seconds": (datetime.now() - start_time).total_seconds(),
                     "validation_passed": False,
+                    "structured_output": True,
                     "error": str(e)
                 },
                 correlation_id=correlation_id,
