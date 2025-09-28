@@ -8,6 +8,8 @@ import pyodbc
 from .config import settings
 from .middleware import RequestIDMiddleware, get_request_id
 from . import services
+from .routes.generate import router as generate_router
+from .routes.render import router as render_router
 
 # Configure logging
 logging.basicConfig(level=settings.log_level)
@@ -32,6 +34,16 @@ app.add_middleware(
 
 # Add Request ID middleware
 app.add_middleware(RequestIDMiddleware)
+
+# Include API routers
+try:
+    app.include_router(generate_router)
+    logger.info("Generate router registered")
+except ImportError as e:
+    logger.warning(f"Generate router not available: {e}")
+
+app.include_router(render_router)
+logger.info("Render router registered")
 
 
 class QueryRequest(BaseModel):

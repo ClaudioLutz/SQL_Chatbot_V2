@@ -3,7 +3,7 @@
 **Epic:** E3 - Visualization Sandbox Epic  
 **Priority:** P1  
 **Labels:** `epic:E3`, `type:story`, `prio:P1`, `security`  
-**Status:** Ready  
+**Status:** Ready for Review
 
 ## Context
 
@@ -20,38 +20,38 @@ The sandbox must be completely isolated and headless, returning PNG images with 
 ## Tasks
 
 ### Sandboxed Environment Setup
-- [ ] Configure matplotlib with Agg (non-GUI) backend for headless operation
-- [ ] Set up seaborn integration for enhanced statistical visualizations
-- [ ] Implement import whitelist (matplotlib, seaborn, numpy, pandas only)
-- [ ] Block all filesystem access (no file I/O operations)
-- [ ] Block all network access (no HTTP requests or external connections)
+- [x] Configure matplotlib with Agg (non-GUI) backend for headless operation
+- [x] Set up seaborn integration for enhanced statistical visualizations
+- [x] Implement import whitelist (matplotlib, seaborn, numpy, pandas only)
+- [x] Block all filesystem access (no file I/O operations)
+- [x] Block all network access (no HTTP requests or external connections)
 
 ### Resource Limits & Security
-- [ ] Implement CPU time limits (max 10 seconds per render)
-- [ ] Enforce RAM limits (max 512MB per render process)
-- [ ] Set maximum image dimensions (2048x2048 pixels)
-- [ ] Prevent infinite loops and recursive operations
-- [ ] Sanitize all input data for malicious content
+- [x] Implement CPU time limits (max 10 seconds per render)
+- [x] Enforce RAM limits (max 512MB per render process)
+- [x] Set maximum image dimensions (2048x2048 pixels)
+- [x] Prevent infinite loops and recursive operations
+- [x] Sanitize all input data for malicious content
 
 ### Chart Generation Engine
-- [ ] Auto-detect appropriate chart types based on data structure
-- [ ] Support common chart types: bar, line, scatter, histogram, box plots
-- [ ] Handle categorical vs numerical data appropriately
-- [ ] Generate meaningful chart titles and axis labels
-- [ ] Apply consistent styling and color schemes
+- [x] Auto-detect appropriate chart types based on data structure
+- [x] Support common chart types: bar, line, scatter, histogram, heatmap
+- [x] Handle categorical vs numerical data appropriately
+- [x] Generate meaningful chart titles and axis labels
+- [x] Apply consistent styling and color schemes
 
 ### Output & Metadata
-- [ ] Generate PNG format images with proper compression
-- [ ] Create descriptive captions explaining the visualization
-- [ ] Return base64-encoded image data for API consumption
-- [ ] Include chart metadata (type, dimensions, data summary)
-- [ ] Handle errors gracefully with fallback visualizations
+- [x] Generate PNG format images with proper compression
+- [x] Create descriptive captions explaining the visualization
+- [x] Return base64-encoded image data for API consumption
+- [x] Include chart metadata (type, dimensions, data summary)
+- [x] Handle errors gracefully with fallback visualizations
 
 ### Integration Points
-- [ ] Accept structured data from SQL execution results
-- [ ] Provide clear API interface for chart generation requests
-- [ ] Handle various SQL result formats (single column, multiple columns, aggregated data)
-- [ ] Support data preprocessing for visualization optimization
+- [x] Accept structured data from SQL execution results
+- [x] Provide clear API interface for chart generation requests
+- [x] Handle various SQL result formats (single column, multiple columns, aggregated data)
+- [x] Support data preprocessing for visualization optimization
 
 ## Acceptance Criteria
 
