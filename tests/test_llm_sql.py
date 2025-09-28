@@ -9,6 +9,7 @@ This module tests the SQL generation functionality including:
 - Edge cases and error scenarios
 """
 
+import json
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -32,10 +33,23 @@ class TestSqlGenerator:
     @pytest.mark.asyncio
     async def test_generate_sql_success(self):
         """Test successful SQL generation with valid response."""
+        # Mock structured output
+        mock_structured = {
+            "tables": [{"name": "Production.Product", "alias": "p"}],
+            "columns": [
+                {"table": "p", "name": "ProductID", "alias": None, "function": None},
+                {"table": "p", "name": "Name", "alias": None, "function": None}
+            ],
+            "where_conditions": [],
+            "joins": [],
+            "order_by": [{"column": "p.ProductID", "direction": "ASC"}],
+            "pagination": {"offset": 0, "fetch_next": 20}
+        }
+        
         # Mock OpenAI response
         mock_response = MagicMock()
         mock_choice = MagicMock()
-        mock_choice.message.content = "SELECT ProductID, Name FROM Production.Product ORDER BY ProductID OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY"
+        mock_choice.message.content = json.dumps(mock_structured)
         mock_response.choices = [mock_choice]
         self.mock_client.chat.completions.create.return_value = mock_response
         
@@ -53,7 +67,8 @@ class TestSqlGenerator:
             assert isinstance(result, SqlGenResult)
             assert result.sql.endswith(';')
             assert 'Production.Product' in result.sql
-            assert 'OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY' in result.sql
+            assert 'OFFSET 0 ROWS' in result.sql
+            assert 'FETCH NEXT 20 ROWS ONLY' in result.sql
             assert result.issues == []
             assert result.meta['validation_passed'] == True
             assert result.meta['repair_attempts'] == 0
@@ -61,10 +76,23 @@ class TestSqlGenerator:
     @pytest.mark.asyncio
     async def test_generate_sql_with_pagination(self):
         """Test SQL generation with different pagination parameters."""
+        # Mock structured output with pagination
+        mock_structured = {
+            "tables": [{"name": "Production.Product", "alias": "p"}],
+            "columns": [
+                {"table": "p", "name": "ProductID", "alias": None, "function": None},
+                {"table": "p", "name": "Name", "alias": None, "function": None}
+            ],
+            "where_conditions": [],
+            "joins": [],
+            "order_by": [{"column": "p.ProductID", "direction": "ASC"}],
+            "pagination": {"offset": 40, "fetch_next": 10}
+        }
+        
         # Mock OpenAI response
         mock_response = MagicMock()
         mock_choice = MagicMock()
-        mock_choice.message.content = "SELECT ProductID, Name FROM Production.Product ORDER BY ProductID OFFSET 40 ROWS FETCH NEXT 10 ROWS ONLY"
+        mock_choice.message.content = json.dumps(mock_structured)
         mock_response.choices = [mock_choice]
         self.mock_client.chat.completions.create.return_value = mock_response
         
@@ -79,18 +107,32 @@ class TestSqlGenerator:
                 allowed_tables=['Production.Product']
             )
             
-            assert 'OFFSET 40 ROWS FETCH NEXT 10 ROWS ONLY' in result.sql
+            assert 'OFFSET 40 ROWS' in result.sql
+            assert 'FETCH NEXT 10 ROWS ONLY' in result.sql
     
     @pytest.mark.asyncio
     async def test_generate_sql_with_repair(self):
         """Test SQL generation with repair functionality."""
-        # Mock initial invalid SQL
+        # Mock initial structured response (will fail validation)
+        mock_structured_invalid = {
+            "tables": [{"name": "Production.Product"}],
+            "columns": [
+                {"table": "Production.Product", "name": "ProductID"},
+                {"table": "Production.Product", "name": "Name"}
+            ],
+            "where_conditions": [],
+            "joins": [],
+            "order_by": [{"column": "ProductID", "direction": "ASC"}],
+            "pagination": {"offset": 0, "fetch_next": 20}
+        }
+        
+        # Mock initial invalid response
         mock_response_1 = MagicMock()
         mock_choice_1 = MagicMock()
-        mock_choice_1.message.content = "SELECT ProductID, Name FROM Production.Product"  # Missing ORDER BY
+        mock_choice_1.message.content = json.dumps(mock_structured_invalid)
         mock_response_1.choices = [mock_choice_1]
         
-        # Mock repaired SQL
+        # Mock repaired SQL (plain text for repair)
         mock_response_2 = MagicMock()
         mock_choice_2 = MagicMock()
         mock_choice_2.message.content = "SELECT ProductID, Name FROM Production.Product ORDER BY ProductID OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY"
@@ -123,12 +165,34 @@ class TestSqlGenerator:
     @pytest.mark.asyncio
     async def test_generate_sql_repair_failure(self):
         """Test SQL generation when repair attempts fail."""
-        # Mock responses that always fail validation
-        mock_response = MagicMock()
-        mock_choice = MagicMock()
-        mock_choice.message.content = "SELECT ProductID, Name FROM NonExistentTable"
-        mock_response.choices = [mock_choice]
-        self.mock_client.chat.completions.create.return_value = mock_response
+        # Mock structured response that will always fail validation
+        mock_structured_invalid = {
+            "tables": [{"name": "NonExistentTable"}],
+            "columns": [
+                {"table": "NonExistentTable", "name": "ProductID"},
+                {"table": "NonExistentTable", "name": "Name"}
+            ],
+            "where_conditions": [],
+            "joins": [],
+            "order_by": [{"column": "ProductID", "direction": "ASC"}],
+            "pagination": {"offset": 0, "fetch_next": 20}
+        }
+        
+        # Mock initial structured response
+        mock_response_1 = MagicMock()
+        mock_choice_1 = MagicMock()
+        mock_choice_1.message.content = json.dumps(mock_structured_invalid)
+        mock_response_1.choices = [mock_choice_1]
+        
+        # Mock repair responses that also fail
+        mock_response_repair = MagicMock()
+        mock_choice_repair = MagicMock()
+        mock_choice_repair.message.content = "SELECT ProductID, Name FROM NonExistentTable"
+        mock_response_repair.choices = [mock_choice_repair]
+        
+        self.mock_client.chat.completions.create.side_effect = [
+            mock_response_1, mock_response_repair, mock_response_repair, mock_response_repair
+        ]
         
         # Mock validation always fails
         with patch('app.llm.sql_generator.validate_sql') as mock_validate:

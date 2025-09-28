@@ -53,8 +53,8 @@ class TestHealthEndpoints:
         assert data["database_name"] == settings.db_name
         assert "request_id" in data
         
-        # Verify database connection was attempted
-        mock_connect.assert_called_once_with(settings.database_connection_string)
+        # Verify database connection was attempted with timeout
+        mock_connect.assert_called_once_with(settings.database_connection_string, timeout=5)
         mock_cursor.execute.assert_called_once_with("SELECT 1 AS test_connection")
     
     @patch('pyodbc.connect')
