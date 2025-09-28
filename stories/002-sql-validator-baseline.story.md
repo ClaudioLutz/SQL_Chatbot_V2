@@ -23,35 +23,35 @@ This is a **hard gate** - no LLM-generated SQL can execute without passing throu
 ## Tasks
 
 ### Core Validation Engine
-- [ ] Create SQL parser/validator service class
-- [ ] Implement READ-ONLY validation (SELECT statements only)
-- [ ] Block all DDL operations (CREATE, ALTER, DROP, TRUNCATE, etc.)
-- [ ] Block all DML operations (INSERT, UPDATE, DELETE, MERGE, etc.)
-- [ ] Block system/administrative commands (EXEC, BULK INSERT, etc.)
+- [x] Create SQL parser/validator service class
+- [x] Implement READ-ONLY validation (SELECT statements only)
+- [x] Block all DDL operations (CREATE, ALTER, DROP, TRUNCATE, etc.)
+- [x] Block all DML operations (INSERT, UPDATE, DELETE, MERGE, etc.)
+- [x] Block system/administrative commands (EXEC, BULK INSERT, etc.)
 
 ### Allow-List Implementation
-- [ ] Create configurable allow-list for permitted tables and views
-- [ ] Validate that all referenced objects are in the allow-list
-- [ ] Support schema-qualified names (e.g., `dbo.Products`, `Sales.Customer`)
-- [ ] Handle table aliases and subqueries correctly
+- [x] Create configurable allow-list for permitted tables and views
+- [x] Validate that all referenced objects are in the allow-list
+- [x] Support schema-qualified names (e.g., `dbo.Products`, `Sales.Customer`)
+- [x] Handle table aliases and subqueries correctly
 
 ### Deterministic Results Enforcement
-- [ ] Detect usage of `TOP` clause without `ORDER BY`
-- [ ] Detect `OFFSET/FETCH` without `ORDER BY`
-- [ ] Require unique tiebreaker columns in `ORDER BY` (e.g., primary key)
-- [ ] Validate `ORDER BY` columns exist in SELECT or underlying tables
+- [x] Detect usage of `TOP` clause without `ORDER BY`
+- [x] Detect `OFFSET/FETCH` without `ORDER BY`
+- [x] Require unique tiebreaker columns in `ORDER BY` (e.g., primary key)
+- [x] Validate `ORDER BY` columns exist in SELECT or underlying tables
 
 ### Query Limits & Safety
-- [ ] Implement configurable row count limits
-- [ ] Add query timeout validation (max execution time)
-- [ ] Prevent nested queries beyond reasonable depth
-- [ ] Block potentially expensive operations (CROSS JOIN without WHERE, etc.)
+- [x] Implement configurable row count limits
+- [x] Add query timeout validation (max execution time)
+- [x] Prevent nested queries beyond reasonable depth
+- [x] Block potentially expensive operations (CROSS JOIN without WHERE, etc.)
 
 ### Error Handling & User Experience
-- [ ] Generate user-safe error messages (no SQL injection hints)
-- [ ] Provide helpful suggestions for fixing common violations
-- [ ] Log security violations with correlation IDs
-- [ ] Return structured error responses for API consumption
+- [x] Generate user-safe error messages (no SQL injection hints)
+- [x] Provide helpful suggestions for fixing common violations
+- [x] Log security violations with correlation IDs
+- [x] Return structured error responses for API consumption
 
 ## Acceptance Criteria
 
