@@ -233,3 +233,4 @@ config.cfg
 settings.ini
 local_settings.py
 .env
+test_openai_api_key.py

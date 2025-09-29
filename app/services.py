@@ -4,12 +4,12 @@ import traceback
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (override existing environment variables)
+load_dotenv(override=True)
 
 # Configuration from environment variables
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5")
 DB_CONNECTION_STRING = os.environ.get(
     "DB_CONNECTION_STRING",
     "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1433;DATABASE=AdventureWorks2022;UID=sa;PWD=YourStrong!Passw0rd;Encrypt=Yes;TrustServerCertificate=Yes"
@@ -139,7 +139,7 @@ async def get_sql_from_gpt(question: str) -> str:
                 {"role": "system", "content": schema_context},
                 {"role": "user", "content": f"Question: {question}"}
             ],
-            max_completion_tokens=300,
+            max_completion_tokens=800,
             temperature=0.1
         )
         
