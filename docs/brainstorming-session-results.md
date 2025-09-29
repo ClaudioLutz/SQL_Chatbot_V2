@@ -149,13 +149,16 @@
 - **Timeline:** 1-2 weeks for robust implementation
 
 #### #3 Priority: GPT-5 Visualization Code Generation
-- **Rationale:** Core functionality that enables the entire feature, builds on proven GPT-5 integration patterns
+- **Rationale:** Core functionality that enables the entire feature, builds on proven GPT-5 integration patterns. **Critical Note:** The implementation of a secure code execution sandbox is a significant technical challenge with major security implications that must be addressed thoroughly.
+
+As this is for the use of just one data analyst the total security risk is not a concern.
+
 - **Next steps:**
-  1. Design prompt templates for visualization code generation
-  2. Create code execution sandbox for generated visualization code
-  3. Implement error handling and fallback mechanisms
+  1. Design and implement a secure, isolated code execution sandbox. This is a prerequisite for any code generation.
+  2. Design prompt templates for visualization code generation.
+  3. Implement robust error handling and fallback mechanisms for both code generation and execution failures.
 - **Resources needed:** AI prompt engineer, Python visualization expert
-- **Timeline:** 2-3 weeks for reliable implementation
+- **Timeline:** 4-6 weeks for reliable implementation, with a significant portion dedicated to the secure sandbox.
 
 ## Reflection & Follow-up
 
@@ -166,9 +169,9 @@
 - User's practical insights (pandas describe(), two-page architecture) significantly improved solutions
 
 ### Areas for Further Exploration
-- **Error Handling Strategies**: How to handle GPT-5 code generation failures, invalid visualizations
+- **Error Handling Strategies**: Define a comprehensive strategy for the MVP. What does the user see if code generation fails, the code is invalid, or execution times out? This must be defined before implementation.
 - **Performance Optimization**: Caching strategies for repeated data analysis, visualization generation
-- **Security Considerations**: Code execution sandboxing, input validation for generated Python code
+- **Security Considerations**: **(High Priority)** The design and implementation of a secure code execution sandbox is the most critical risk. This includes preventing filesystem access, network calls, and other malicious activities. Input validation is secondary to the sandbox's integrity.
 - **Styling and Branding**: Consistent visual design between data and visualization pages
 
 ### Recommended Follow-up Techniques
