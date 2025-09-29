@@ -133,17 +133,18 @@ async def get_sql_from_gpt(question: str) -> str:
     """
     
     try:
-        response = client.chat.completions.create(
+        response = client.responses.create(
             model=OPENAI_MODEL,
-            messages=[
+            input=[
                 {"role": "system", "content": schema_context},
                 {"role": "user", "content": f"Question: {question}"}
             ],
-            max_completion_tokens=800,
-            temperature=0.1
+            max_output_tokens=1200,              # Increased from 300/800 for longer responses
+            reasoning={"effort": "high"},        # Changed from "minimal" to enable deeper thinking
+            text={"verbosity": "low"}            # Keep low since we only want SQL back
         )
         
-        sql_query = (response.choices[0].message.content or "").strip()
+        sql_query = (response.output_text or "").strip()
         
         if not sql_query:
             raise ValueError("Empty response from OpenAI API")
