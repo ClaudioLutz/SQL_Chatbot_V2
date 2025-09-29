@@ -234,4 +234,4 @@ settings.ini
 local_settings.py
 .env
 test_openai_api_key.py
-app/__pycache__/__init__.cpython-313.pyc
+__pycache__/
