@@ -19,8 +19,12 @@ DB_CONNECTION_STRING = os.environ.get(
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY environment variable is required")
 
-# Initialize OpenAI client
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Initialize OpenAI client with timeout and retry settings from .env
+client = OpenAI(
+    api_key=OPENAI_API_KEY,
+    timeout=float(os.environ.get("OPENAI_REQUEST_TIMEOUT", 30)),
+    max_retries=int(os.environ.get("OPENAI_MAX_RETRIES", 2)),
+)
 
 
 def _is_safe_select(sql: str) -> bool:
@@ -139,18 +143,52 @@ async def get_sql_from_gpt(question: str) -> str:
                 {"role": "system", "content": schema_context},
                 {"role": "user", "content": f"Question: {question}"}
             ],
-            max_output_tokens=1200,              # Increased from 300/800 for longer responses
-            reasoning={"effort": "high"},        # Changed from "minimal" to enable deeper thinking
-            text={"verbosity": "low"}            # Keep low since we only want SQL back
+            max_output_tokens=800,               # Optimized for SQL responses
+            reasoning={"effort": "medium"},         # Low effort for better stability  
+            text={"verbosity": "low"}            # Keep output concise
         )
+        
+        # Debug logging for troubleshooting
+        request_id = getattr(response, '_request_id', 'unknown')
+        print(f"OpenAI Request ID: {request_id}")
         
         sql_query = (response.output_text or "").strip()
         
+        # If empty, add debug info and try recovery
         if not sql_query:
-            raise ValueError("Empty response from OpenAI API")
+            print(f"Empty response detected. Request ID: {request_id}")
+            print("Raw response debug info:")
+            print(response.model_dump_json(indent=2))
+            
+            # Try one recovery attempt with explicit instruction
+            print("Attempting recovery with stricter instruction...")
+            recovery_response = client.responses.create(
+                model=OPENAI_MODEL,
+                input=[
+                    {"role": "system", "content": schema_context + "\n\nIMPERATIVE: Always output a single SELECT statement as plain text. Never return empty response."},
+                    {"role": "user", "content": f"Generate SQL for: {question}"}
+                ],
+                max_output_tokens=800,
+                reasoning={"effort": "low"},
+                text={"verbosity": "low"}
+            )
+            
+            sql_query = (recovery_response.output_text or "").strip()
+            recovery_request_id = getattr(recovery_response, '_request_id', 'unknown')
+            print(f"Recovery attempt Request ID: {recovery_request_id}")
+            
+            if not sql_query:
+                print("Recovery failed - response still empty")
+                print("Recovery response debug info:")
+                print(recovery_response.model_dump_json(indent=2))
+                raise ValueError("Empty response from OpenAI API after recovery attempt")
         
         # Clean up the response
         sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+        
+        # Final check after cleanup
+        if not sql_query:
+            raise ValueError("SQL query is empty after cleanup")
         
         # Validate the SQL is safe
         if not _is_safe_select(sql_query):
