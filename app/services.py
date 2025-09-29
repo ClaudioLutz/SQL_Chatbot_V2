@@ -143,7 +143,7 @@ async def get_sql_from_gpt(question: str) -> str:
                 {"role": "system", "content": schema_context},
                 {"role": "user", "content": f"Question: {question}"}
             ],
-            max_output_tokens=800,               # Optimized for SQL responses
+            max_output_tokens=2400,               # Optimized for SQL responses
             reasoning={"effort": "medium"},         # Low effort for better stability  
             text={"verbosity": "low"}            # Keep output concise
         )
@@ -168,7 +168,7 @@ async def get_sql_from_gpt(question: str) -> str:
                     {"role": "system", "content": schema_context + "\n\nIMPERATIVE: Always output a single SELECT statement as plain text. Never return empty response."},
                     {"role": "user", "content": f"Generate SQL for: {question}"}
                 ],
-                max_output_tokens=800,
+                max_output_tokens=2400,
                 reasoning={"effort": "low"},
                 text={"verbosity": "low"}
             )
