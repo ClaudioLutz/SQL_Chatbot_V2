@@ -3,5 +3,7 @@ uvicorn
 pyodbc
 openai
 python-dotenv
-pandas
-skimpy
+pandas>=2.0.0
+skimpy==0.0.9
+numpy>=1.24.0
+pytest>=7.0.0

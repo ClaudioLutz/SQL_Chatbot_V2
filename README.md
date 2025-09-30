@@ -9,9 +9,37 @@ Natural‑language → SQL for Microsoft SQL Server, built with **FastAPI**, a t
 ## Features
 
 * Ask questions in plain English; receive the generated SQL and results
+* **Automatic data analysis** with statistical insights in the Analysis tab
 * Read‑only execution against SQL Server (e.g., AdventureWorks)
 * Minimal, self‑contained frontend served by FastAPI
 * Simple configuration via `.env`
+
+## Analysis Feature
+
+### Overview
+The SQL Chatbot now includes automatic data analysis capabilities. After executing a query, users can view statistical insights about their data in the Analysis tab.
+
+### Features
+- **Variable Type Summary:** Breakdown of column data types
+- **Numeric Statistics:** Mean, standard deviation, quartiles for numeric columns
+- **Cardinality Analysis:** Unique value counts for all columns
+- **Missing Values:** Detection of null/missing data
+
+### Usage
+1. Submit a natural language question
+2. View query results in the Results tab
+3. Click the **Analysis** tab to see statistical summary
+4. Analysis is generated automatically (< 2 seconds for typical datasets)
+
+### Limitations
+- Analysis requires at least 2 rows of data
+- Maximum dataset size: 50,000 rows
+- Datasets exceeding the limit will display an informational message
+
+### Dependencies
+- `skimpy==0.0.9` - Statistical analysis engine
+- `pandas>=2.0.0` - Data manipulation
+- `numpy>=1.24.0` - Numerical operations
 
 ---
 
@@ -127,6 +155,95 @@ Open [http://localhost:8000](http://localhost:8000) and try a question, e.g., �
   "results": { "error": "<message>" }
 }
 ```
+
+### `POST /api/analyze`
+
+Generate statistical analysis for query results.
+
+**Request**
+
+```json
+{
+  "columns": ["Name", "ListPrice"],
+  "rows": [
+    {"Name": "Product A", "ListPrice": 49.99},
+    {"Name": "Product B", "ListPrice": 29.99}
+  ]
+}
+```
+
+**Response (Success)**
+
+```json
+{
+  "status": "success",
+  "row_count": 150,
+  "column_count": 5,
+  "variable_types": {
+    "numeric": 2,
+    "categorical": 2,
+    "datetime": 1
+  },
+  "numeric_stats": [
+    {
+      "column": "ListPrice",
+      "count": 150,
+      "mean": 3486.63,
+      "std": 96.88,
+      "min": 3374.99,
+      "q25": 3399.99,
+      "q50": 3489.13,
+      "q75": 3578.27,
+      "max": 3578.27
+    }
+  ],
+  "cardinality": [
+    {"column": "Name", "unique_count": 150, "total_count": 150},
+    {"column": "ListPrice", "unique_count": 3, "total_count": 150}
+  ],
+  "missing_values": [
+    {"column": "Name", "null_count": 0, "null_percentage": 0.0},
+    {"column": "ListPrice", "null_count": 0, "null_percentage": 0.0}
+  ]
+}
+```
+
+**Response (Too Large)**
+
+```json
+{
+  "status": "too_large",
+  "row_count": 75000,
+  "column_count": 5,
+  "message": "Analysis unavailable for datasets exceeding 50,000 rows. Please refine your query for detailed statistics."
+}
+```
+
+**Response (Insufficient Data)**
+
+```json
+{
+  "status": "insufficient_rows",
+  "row_count": 1,
+  "column_count": 3,
+  "message": "Analysis requires at least 2 rows of data."
+}
+```
+
+**Response (Error)**
+
+```json
+{
+  "status": "error",
+  "message": "Analysis could not be generated for this dataset.",
+  "error_detail": "..."
+}
+```
+
+**Status Codes:**
+- 200: Success (includes all response types above)
+- 422: Validation error (malformed request)
+- 500: Server error
 
 ---
 

@@ -1,0 +1,13 @@
+status: PASS
+risks:
+  - id: 1
+    risk: Performance degradation with large datasets
+    mitigation: The 50K row limit and lazy loading are effective mitigations.
+    probability: Low
+    impact: Medium
+  - id: 2
+    risk: Incorrect statistical calculations from skimpy
+    mitigation: The library is well-vetted, and the plan includes unit tests to verify outputs.
+    probability: Low
+    impact: High
+concerns: []

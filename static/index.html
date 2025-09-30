@@ -13,8 +13,32 @@
     <hr>
     <h2>Generated SQL Query:</h2>
     <pre id="sql-query-output"></pre>
-    <h2>Results:</h2>
-    <div id="results-output"></div>
+
+    <!-- NEW: Tab Navigation -->
+    <div class="tab-container">
+        <button class="tab-button active" data-tab="results" id="results-tab-btn">
+            Results
+        </button>
+        <button class="tab-button" data-tab="analysis" id="analysis-tab-btn">
+            Analysis
+        </button>
+    </div>
+
+    <!-- NEW: Results Tab Content -->
+    <div id="results-tab" class="tab-content active">
+        <h2>Results:</h2>
+        <div id="results-output"></div>
+    </div>
+
+    <!-- NEW: Analysis Tab Content -->
+    <div id="analysis-tab" class="tab-content">
+        <h2>Statistical Analysis:</h2>
+        <div id="analysis-loading" class="loading-indicator">
+            <span class="spinner"></span> Generating analysis...
+        </div>
+        <div id="analysis-output"></div>
+        <div id="analysis-error" class="error-message" style="display: none;"></div>
+    </div>
     <script src="app.js"></script>
 </body>
 </html>
