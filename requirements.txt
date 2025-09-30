@@ -3,3 +3,5 @@ uvicorn
 pyodbc
 openai
 python-dotenv
+pandas
+skimpy

@@ -1,49 +1,102 @@
-# Project Brief: SQL Chatbot POC
+# Project Brief: SQL Chatbot - Automatic Data Analysis Feature (POC)
 
-## Executive Summary
-This project will develop a proof-of-concept (POC) SQL Chatbot to demonstrate the capability of translating natural language questions into SQL queries using the GPT-5 model. The primary goal is to showcase this technology to management. For development, the application will connect to a local SQL Server with the AdventureWorks sample database. For the final presentation, it will be configured to connect to the production SQL server.
+**Author:** Mary, Business Analyst
 
-## Problem Statement
-Management is interested in exploring AI-driven solutions to simplify data access. Currently, retrieving data from databases requires technical knowledge of SQL. This creates a barrier for non-technical stakeholders who need to access data for decision-making. This POC aims to demonstrate a solution that removes this barrier.
+## 1. Problem Statement
 
-## Proposed Solution
-We will build a web-based chatbot using a Python FastAPI backend. The user will input a question in natural language. The backend will send this question to the GPT-5 model, which will translate it into a SQL query. This query will then be executed against the configured SQL database. The resulting data table, along with the generated SQL query, will be displayed to the user.
+Users can generate SQL queries and view the resulting data tables, but they lack a quick way to understand the basic statistical properties and overall shape of the data they've just queried. To gain initial insights, they would need to manually download the data and analyze it in a separate tool, which is inefficient for rapid exploration.
 
-## Target Users
-- **Primary User Segment:** Management and other non-technical stakeholders.
+## 2. Proposed Solution
 
-## Goals & Success Metrics
-- **Business Objective:** Successfully demonstrate the feasibility of a natural language to SQL chatbot to management.
-- **User Success Metric:** A user can ask a question in plain English and receive an accurate data table from the database.
-- **KPI:** The successful execution of a natural language query that returns the expected result.
+We will introduce an automatic data analysis feature that appears after a user successfully executes a SQL query. This feature will use the `skimpy` library to generate a concise statistical summary of the query result set. The UI will be updated to include a tabbed interface above the results area with two tabs: "Results" and "Analysis". The "Analysis" tab will display the statistical summary, providing immediate, valuable insights into the data without leaving the application.
 
-## MVP Scope
-### Core Features (Must Have)
-- **Natural Language Input:** A simple web interface with a text box for users to type their questions.
-- **SQL Generation:** Integration with GPT-5 to translate the natural language input into a valid SQL query.
-- **Query Execution:** The ability to connect to the local SQL Server and execute the generated query.
-- **Result Display:** The results of the query will be displayed in a clear, tabular format, along with the SQL query that was generated.
+## 3. User Value Proposition
 
-### Out of Scope for MVP
-- User authentication and authorization
-- Query history and caching
-- Advanced data visualization
-- Multi-user support
-- Scalability and performance optimizations
+This feature will empower users to:
+- **Understand Data Instantly:** Get a quick snapshot of the data's characteristics (distributions, data types, cardinality) immediately after running a query.
+- **Accelerate Exploration:** Quickly identify patterns, outliers, or data quality issues without switching contexts.
+- **Make Faster Decisions:** Use the initial analysis to refine their next query or inform their next steps more efficiently.
 
-## Technical Considerations
-- **Backend:** Python with FastAPI
-- **Database (Development):** Microsoft SQL Server (AdventureWorks sample database) running in a Docker container.
-- **Database (Presentation):** Production SQL Server (read-only access).
-- **AI Model:** GPT-5 for natural language processing.
+## 4. Scope & Requirements (POC)
 
-## Constraints & Assumptions
-- **Constraints:** This is a POC and is not intended for production use. The focus is on functionality, not on a polished UI or scalability.
-- **Key Assumptions:**
-    - We have access to the GPT-5 API.
-- The AdventureWorks database is set up and accessible locally via Docker for development purposes.
-- Read-only access to the production database will be available for the final presentation.
-    - The scope is limited to read-only queries.
+The goal of this Proof of Concept (POC) is to validate the core functionality and user value with minimal implementation complexity.
 
-## Next Steps
-- **PM Handoff:** This Project Brief provides the full context for the SQL Chatbot POC. The next step is to create a detailed Product Requirements Document (PRD).
+**In-Scope Features:**
+
+1.  **Trigger:** The analysis will be generated and displayed automatically after a SQL query returns a non-empty result with at least 2 rows and 1 column.
+2.  **Analysis Engine:** The backend will use the `skimpy` library to perform the data analysis.
+3.  **Dataset Size Limits:**
+    *   **Maximum:** Analysis will only be performed on result sets with ≤50,000 rows to ensure responsive performance.
+    *   **Behavior for Large Datasets:** If a query returns >50,000 rows, the Analysis tab will display a message: "Analysis unavailable for datasets exceeding 50,000 rows. Please refine your query for detailed statistics."
+4.  **Displayed Statistics:** The analysis page will display the following key information from the `skimpy` report:
+    *   **Variable Type Breakdown:** A summary of how many columns belong to each data type (e.g., numeric, categorical, datetime).
+    *   **Numeric Distribution Snapshot:** For all numeric columns, show key summary statistics (e.g., mean, standard deviation, min, max, and quartiles).
+    *   **Unique Values / Cardinality:** For each column, display the count of unique values.
+    *   **Missing Values:** For each column, display the count and percentage of null/missing values for data quality assessment.
+5.  **Error Handling:**
+    *   If analysis fails for any reason (e.g., unsupported data types, processing errors), the Analysis tab will display: "Analysis could not be generated for this dataset."
+    *   The Results tab will always be available regardless of analysis success/failure.
+6.  **User Experience:**
+    *   The Results tab remains active by default after query execution.
+    *   A loading indicator will appear in the Analysis tab while processing (expected <2 seconds for typical datasets).
+    *   Users can switch between tabs at any time; analysis persists once generated.
+
+**Out-of-Scope for POC:**
+
+*   Advanced visualizations (histograms, correlation matrices).
+*   User-configurable analysis options.
+*   Saving or exporting the analysis report.
+*   Handling extremely large datasets that could cause performance issues.
+
+## 5. Success Criteria
+
+The POC will be considered successful if:
+- A user can run a SQL query and is seamlessly presented with a new page showing the statistical analysis.
+- The analysis page correctly displays the three required statistical sections (Variable Types, Numeric Distribution, Cardinality).
+- The feature is stable and does not introduce regressions to the existing query functionality.
+
+## 6. Implementation Notes & Constraints
+
+**Backend Implementation:**
+
+*   **Analysis Endpoint:** Create a dedicated POST endpoint `/api/analyze` that accepts the query result DataFrame.
+*   **Processing:** Pass the DataFrame directly to `skimpy` in memory (no file I/O for performance).
+*   **Row Limit Check:** Before analysis, check row count. If >50,000 rows, return `{"status": "too_large"}` without processing.
+*   **Data Format Output:** Extract structured data from skimpy's output and return as JSON:
+    ```json
+    {
+      "status": "success",
+      "variable_types": {"numeric": 5, "categorical": 3, "datetime": 1},
+      "numeric_stats": [
+        {"column": "price", "mean": 45.2, "std": 12.3, "min": 10, "max": 99, "q25": 35, "q50": 44, "q75": 55}
+      ],
+      "cardinality": [
+        {"column": "product_id", "unique_count": 150}
+      ],
+      "missing_values": [
+        {"column": "description", "null_count": 23, "null_percentage": 15.3}
+      ]
+    }
+    ```
+*   **Error Handling:** Wrap analysis in try-catch; return `{"status": "error"}` on failure.
+
+**Frontend Implementation:**
+
+*   **Tabbed Interface:** Implement two tabs above results area: "Results" (default active) and "Analysis".
+*   **Loading State:** Show spinner/loading indicator in Analysis tab while backend processes (typical: <2 seconds).
+*   **Tab Persistence:** Once analysis is generated, persist data on client side when switching tabs.
+*   **Display Format:** Render the JSON response as formatted tables/cards for easy readability.
+
+**Technical Constraints:**
+
+*   **Memory:** Skimpy analysis on 50K rows typically uses <100MB RAM; acceptable for POC.
+*   **Minimum Dataset:** Analysis requires ≥2 rows to generate meaningful statistics.
+*   **Data Type Support:** Skimpy handles standard SQL types; unusual types (JSON, XML, binary) will be shown as "other" in variable types.
+
+## 7. Future Considerations
+
+*   **Async Processing:** For larger datasets (if limit increases), consider async processing with progress updates.
+*   **Advanced Visualizations:** Histograms, correlation matrices, distribution plots.
+*   **User Configuration:** Allow users to select which statistics to display.
+*   **Export Functionality:** Download analysis report as CSV/PDF.
+*   **Caching:** Cache analysis results to avoid reprocessing on tab switches.
