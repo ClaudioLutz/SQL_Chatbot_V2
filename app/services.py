@@ -22,7 +22,7 @@ if not OPENAI_API_KEY:
 # Initialize OpenAI client with timeout and retry settings from .env
 client = OpenAI(
     api_key=OPENAI_API_KEY,
-    timeout=float(os.environ.get("OPENAI_REQUEST_TIMEOUT", 30)),
+    timeout=float(os.environ.get("OPENAI_REQUEST_TIMEOUT", 120)),
     max_retries=int(os.environ.get("OPENAI_MAX_RETRIES", 2)),
 )
 
@@ -30,7 +30,8 @@ client = OpenAI(
 def _is_safe_select(sql: str) -> bool:
     """Validate that SQL is a safe SELECT statement only."""
     s = sql.strip().lower()
-    if not s.startswith("select"):
+    # Allow CTEs that start with WITH - they are safe read-only constructs
+    if not (s.startswith("select") or s.startswith("with")):
         return False
     
     # Check for dangerous keywords
@@ -143,7 +144,7 @@ async def get_sql_from_gpt(question: str) -> str:
                 {"role": "system", "content": schema_context},
                 {"role": "user", "content": f"Question: {question}"}
             ],
-            max_output_tokens=2400,               # Optimized for SQL responses
+            max_output_tokens=8000,               # Optimized for SQL responses
             reasoning={"effort": "medium"},         # Low effort for better stability  
             text={"verbosity": "low"}            # Keep output concise
         )
