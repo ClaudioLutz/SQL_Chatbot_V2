@@ -391,6 +391,244 @@ th {
     font-style: italic;
 }
 
+/* ============================================
+   MANUAL SQL EDITING STYLES
+   ============================================ */
+
+/* Mode Selector */
+.mode-selector {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+    width: 80%;
+}
+
+.mode-button {
+    flex: 1;
+    padding: 12px 24px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    color: #666;
+}
+
+.mode-button:hover {
+    border-color: #007bff;
+    background: #f0f7ff;
+}
+
+.mode-button.active {
+    border-color: #007bff;
+    background: #007bff;
+    color: white;
+    font-weight: 600;
+}
+
+.mode-button:focus {
+    outline: 2px solid #007bff;
+    outline-offset: 2px;
+}
+
+/* Input Container */
+.input-container {
+    width: 80%;
+    margin-bottom: 20px;
+}
+
+.input-container.hidden {
+    display: none;
+}
+
+/* SQL Editor Section */
+.sql-editor-section {
+    width: 80%;
+    margin-bottom: 20px;
+}
+
+.sql-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.sql-editor-header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.sql-editor-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.sql-editor {
+    width: 100%;
+    min-height: 150px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+    padding: 12px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    resize: vertical;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease;
+}
+
+.sql-editor:focus {
+    outline: none;
+    border-color: #007bff;
+}
+
+.sql-editor.edited {
+    border-color: #ffc107;
+    background-color: #fffef5;
+}
+
+.sql-editor.valid {
+    border-color: #28a745;
+}
+
+.sql-editor.invalid {
+    border-color: #dc3545;
+    background-color: #fff5f5;
+}
+
+/* Validation Feedback */
+.validation-feedback {
+    min-height: 24px;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.validation-feedback.valid {
+    background-color: #d4edda;
+    border: 1px solid #28a745;
+    color: #155724;
+}
+
+.validation-feedback.invalid {
+    background-color: #f8d7da;
+    border: 1px solid #dc3545;
+    color: #721c24;
+}
+
+.validation-feedback.warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffc107;
+    color: #856404;
+}
+
+.validation-feedback:empty {
+    display: none;
+}
+
+/* Execution Controls */
+.execution-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.primary-button {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 4px;
+    background: #007bff;
+    color: white;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.primary-button:hover:not(:disabled) {
+    background: #0056b3;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+}
+
+.primary-button:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.primary-button:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.secondary-button {
+    padding: 12px 24px;
+    border: 2px solid #007bff;
+    border-radius: 4px;
+    background: white;
+    color: #007bff;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.secondary-button:hover {
+    background: #007bff;
+    color: white;
+}
+
+.small-button {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    color: #666;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.small-button:hover {
+    background: #f8f9fa;
+    border-color: #007bff;
+    color: #007bff;
+}
+
+/* Query Metadata Bar */
+.metadata-bar {
+    width: 80%;
+    padding: 12px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    font-size: 14px;
+}
+
+.metadata-item {
+    display: flex;
+    align-items: center;
+    color: #666;
+}
+
+.metadata-item::before {
+    content: "•";
+    margin: 0 8px;
+    color: #007bff;
+}
+
+.metadata-item:first-child::before {
+    display: none;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .stats-grid {
@@ -436,5 +674,32 @@ th {
     
     .chart-container {
         min-height: 300px;
+    }
+    
+    /* Manual SQL editing responsive */
+    .mode-selector,
+    .input-container,
+    .sql-editor-section,
+    .metadata-bar,
+    textarea {
+        width: 95%;
+    }
+    
+    .execution-controls {
+        flex-direction: column;
+    }
+    
+    .primary-button,
+    .secondary-button {
+        width: 100%;
+    }
+    
+    .metadata-bar {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .metadata-item::before {
+        display: none;
     }
 }

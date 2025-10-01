@@ -8,11 +8,49 @@
 </head>
 <body>
     <h1>SQL Chatbot POC</h1>
-    <textarea id="question-input" placeholder="Enter your question here..."></textarea>
-    <button id="submit-btn">Submit</button>
+    
+    <!-- NEW: Mode Selector -->
+    <div class="mode-selector">
+        <button id="auto-mode-btn" class="mode-button active" data-mode="auto">
+            🤖 Auto Mode
+        </button>
+        <button id="manual-mode-btn" class="mode-button" data-mode="manual">
+            ✍️ Manual Mode
+        </button>
+    </div>
+    
+    <!-- Auto Mode: Question Input -->
+    <div id="question-container" class="input-container">
+        <textarea id="question-input" placeholder="Enter your question here..."></textarea>
+        <button id="submit-btn" class="primary-button">Generate SQL</button>
+    </div>
+    
+    <!-- SQL Editor Section -->
+    <div class="sql-editor-section">
+        <div class="sql-editor-header">
+            <h2>SQL Query:</h2>
+            <div class="sql-editor-controls">
+                <button id="format-sql-btn" class="small-button" title="Format SQL">Format</button>
+                <button id="clear-sql-btn" class="small-button" title="Clear SQL">Clear</button>
+            </div>
+        </div>
+        <textarea id="sql-query-editor" class="sql-editor" placeholder="Write your SQL query here or generate one above..."></textarea>
+        <div id="sql-validation-feedback" class="validation-feedback"></div>
+        <div class="execution-controls">
+            <button id="execute-sql-btn" class="primary-button" disabled>Execute SQL</button>
+            <button id="regenerate-btn" class="secondary-button" style="display: none;">Regenerate</button>
+        </div>
+    </div>
+    
+    <!-- Query Metadata Bar -->
+    <div id="query-metadata-bar" class="metadata-bar" style="display: none;">
+        <span id="metadata-mode" class="metadata-item"></span>
+        <span id="metadata-question" class="metadata-item"></span>
+        <span id="metadata-timestamp" class="metadata-item"></span>
+        <span id="metadata-rowcount" class="metadata-item"></span>
+    </div>
+    
     <hr>
-    <h2>Generated SQL Query:</h2>
-    <pre id="sql-query-output"></pre>
 
     <!-- NEW: Tab Navigation -->
     <div class="tab-container">

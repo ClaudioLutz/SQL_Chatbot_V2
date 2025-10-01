@@ -1,8 +1,14 @@
 import os
 import pyodbc
 import traceback
+import hashlib
+import re
+import logging
 from dotenv import load_dotenv
 from openai import OpenAI
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file (override existing environment variables)
 load_dotenv(override=True)
@@ -27,8 +33,38 @@ client = OpenAI(
 )
 
 
-def _is_safe_select(sql: str) -> bool:
-    """Validate that SQL is a safe SELECT statement only."""
+def sanitize_sql_for_logging(sql: str, max_length: int = 100) -> str:
+    """Remove sensitive values from SQL for safe logging."""
+    # Replace string literals
+    sanitized = re.sub(r"'[^']*'", "'<STRING>'", sql)
+    # Replace large numbers (potential IDs)
+    sanitized = re.sub(r'\b\d{9,}\b', '<NUMBER>', sanitized)
+    # Truncate
+    return sanitized[:max_length] + ("..." if len(sanitized) > max_length else "")
+
+
+def get_sql_hash(sql: str) -> str:
+    """Generate hash for query tracking."""
+    return hashlib.sha256(sql.encode()).hexdigest()[:16]
+
+
+def is_safe_select(sql: str) -> bool:
+    """
+    Validate that SQL is a safe SELECT statement only.
+    
+    Rules:
+    1. Must start with SELECT or WITH (CTE)
+    2. No dangerous keywords:
+       - drop, delete, update, insert
+       - alter, create, truncate
+       - exec, execute, sp_, xp_
+       - Comment injection (--, /*, */)
+    3. No multiple statements (no semicolons except at end)
+    4. Case-insensitive matching
+    
+    Returns:
+        True if safe, False otherwise
+    """
     s = sql.strip().lower()
     # Allow CTEs that start with WITH - they are safe read-only constructs
     if not (s.startswith("select") or s.startswith("with")):
@@ -50,6 +86,12 @@ def _is_safe_select(sql: str) -> bool:
         return False
         
     return True
+
+
+# Maintain backward compatibility
+def _is_safe_select(sql: str) -> bool:
+    """Deprecated: Use is_safe_select() instead."""
+    return is_safe_select(sql)
 
 
 def _add_row_limit_if_needed(sql_query: str) -> str:

@@ -1,5 +1,15 @@
 // Global application state
 const appState = {
+    sql: {
+        mode: "auto", // auto | manual
+        query: "",
+        originalGenerated: "",
+        lastSuccessfulQuery: "",
+        isEdited: false,
+        isValid: false,
+        validationMessage: "",
+        lastExecutionTime: null
+    },
     currentQuery: {
         question: "",
         sql: "",
@@ -7,7 +17,10 @@ const appState = {
             columns: [],
             rows: []
         },
-        timestamp: null
+        timestamp: null,
+        executionMode: "auto", // auto | manual
+        executionTimeMs: 0,
+        rowCount: 0
     },
     analysis: {
         data: null,
@@ -362,7 +375,425 @@ function formatNumber(value) {
     return value.toFixed(2);
 }
 
-// Existing query functionality with integration
+// ============================================
+// MANUAL SQL EDITING FUNCTIONS
+// ============================================
+
+// State persistence
+function saveToSessionStorage() {
+    sessionStorage.setItem('sql_state', JSON.stringify({
+        mode: appState.sql.mode,
+        query: appState.sql.query,
+        originalGenerated: appState.sql.originalGenerated
+    }));
+}
+
+function restoreFromSessionStorage() {
+    const saved = sessionStorage.getItem('sql_state');
+    if (saved) {
+        try {
+            const state = JSON.parse(saved);
+            appState.sql.mode = state.mode || 'auto';
+            appState.sql.query = state.query || '';
+            appState.sql.originalGenerated = state.originalGenerated || '';
+            return true;
+        } catch (e) {
+            console.error('Error restoring state:', e);
+            return false;
+        }
+    }
+    return false;
+}
+
+function getQueryHash(sql) {
+    // Simple hash for query identity
+    return btoa(sql).substring(0, 16);
+}
+
+// SQL validation
+function validateSQL(sql) {
+    const trimmed = sql.trim();
+    
+    if (!trimmed) {
+        return {
+            isValid: false,
+            message: ''
+        };
+    }
+    
+    const sqlLower = trimmed.toLowerCase();
+    
+    // Must start with SELECT or WITH
+    if (!sqlLower.startsWith('select') && !sqlLower.startsWith('with')) {
+        return {
+            isValid: false,
+            message: '❌ Only SELECT statements allowed'
+        };
+    }
+    
+    // Check for dangerous keywords
+    const dangerous = ['drop ', 'delete ', 'update ', 'insert ', 'alter ', 
+                      'create ', 'truncate ', 'exec ', 'execute ', 'sp_', 'xp_', '--', '/*', '*/'];
+    
+    for (const keyword of dangerous) {
+        if (sqlLower.includes(keyword)) {
+            return {
+                isValid: false,
+                message: `❌ Dangerous keyword detected: ${keyword.trim()}`
+            };
+        }
+    }
+    
+    // Check for multiple statements
+    const cleaned = trimmed.replace(/;+$/, '');
+    if (cleaned.includes(';')) {
+        return {
+            isValid: false,
+            message: '❌ Multiple statements not allowed'
+        };
+    }
+    
+    return {
+        isValid: true,
+        message: '✓ Valid SELECT statement'
+    };
+}
+
+function updateSQLValidation() {
+    const editor = document.getElementById('sql-query-editor');
+    const feedback = document.getElementById('sql-validation-feedback');
+    const executeBtn = document.getElementById('execute-sql-btn');
+    
+    const sql = editor.value;
+    const validation = validateSQL(sql);
+    
+    // Update state
+    appState.sql.isValid = validation.isValid;
+    appState.sql.validationMessage = validation.message;
+    
+    // Update UI
+    editor.classList.remove('valid', 'invalid');
+    feedback.className = 'validation-feedback';
+    
+    if (sql.trim()) {
+        if (validation.isValid) {
+            editor.classList.add('valid');
+            feedback.classList.add('valid');
+            feedback.textContent = validation.message;
+            executeBtn.disabled = false;
+        } else {
+            editor.classList.add('invalid');
+            feedback.classList.add('invalid');
+            feedback.textContent = validation.message;
+            executeBtn.disabled = true;
+        }
+    } else {
+        feedback.textContent = '';
+        executeBtn.disabled = true;
+    }
+}
+
+// Mode switching
+function switchMode(newMode) {
+    const currentMode = appState.sql.mode;
+    
+    if (currentMode === newMode) return;
+    
+    // Check if SQL is edited in auto mode
+    if (currentMode === 'auto' && appState.sql.isEdited) {
+        const confirm = window.confirm(
+            'You have edited the SQL. Switching to Manual mode will keep your changes. Continue?'
+        );
+        if (!confirm) return;
+    }
+    
+    // Update state
+    appState.sql.mode = newMode;
+    
+    // Update UI
+    document.querySelectorAll('.mode-button').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.mode === newMode) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // Show/hide question input
+    const questionContainer = document.getElementById('question-container');
+    if (newMode === 'auto') {
+        questionContainer.classList.remove('hidden');
+        document.getElementById('submit-btn').textContent = 'Generate SQL';
+    } else {
+        questionContainer.classList.add('hidden');
+    }
+    
+    // Update regenerate button visibility
+    const regenerateBtn = document.getElementById('regenerate-btn');
+    regenerateBtn.style.display = (newMode === 'auto' && appState.sql.isEdited) ? 'inline-block' : 'none';
+    
+    // Save state
+    saveToSessionStorage();
+    
+    // Validate current SQL
+    updateSQLValidation();
+}
+
+// SQL execution functions
+async function generateSQL() {
+    const question = document.getElementById('question-input').value;
+    if (!question.trim()) {
+        alert('Please enter a question.');
+        return;
+    }
+    
+    const editor = document.getElementById('sql-query-editor');
+    const executeBtn = document.getElementById('execute-sql-btn');
+    
+    editor.value = 'Generating SQL...';
+    executeBtn.disabled = true;
+    
+    // Reset analysis and visualization
+    resetAnalysisState();
+    resetVisualizationState();
+    
+    try {
+        const response = await fetch('/api/query', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ question: question })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Store generated SQL
+        appState.sql.query = data.sql_query;
+        appState.sql.originalGenerated = data.sql_query;
+        appState.sql.isEdited = false;
+        
+        // Update editor
+        editor.value = data.sql_query;
+        updateSQLValidation();
+        
+        // Handle results
+        handleQuerySuccess(data, question);
+        
+    } catch (error) {
+        console.error('Error generating SQL:', error);
+        editor.value = '';
+        alert(`Error generating SQL: ${error.message}`);
+    }
+}
+
+async function executeManualSQL() {
+    const sql = document.getElementById('sql-query-editor').value.trim();
+    
+    if (!sql) {
+        alert('Please enter a SQL query.');
+        return;
+    }
+    
+    const validation = validateSQL(sql);
+    if (!validation.isValid) {
+        alert(`Invalid SQL: ${validation.message}`);
+        return;
+    }
+    
+    const executeBtn = document.getElementById('execute-sql-btn');
+    const originalText = executeBtn.textContent;
+    
+    executeBtn.disabled = true;
+    executeBtn.textContent = 'Executing...';
+    
+    // Reset analysis and visualization
+    resetAnalysisState();
+    resetVisualizationState();
+    
+    try {
+        const response = await fetch('/api/execute-sql', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ sql: sql })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            alert(`Error: ${data.error}`);
+            executeBtn.textContent = originalText;
+            executeBtn.disabled = false;
+            return;
+        }
+        
+        // Store successful query
+        appState.sql.lastSuccessfulQuery = sql;
+        
+        // Handle results (no question for manual mode)
+        handleQuerySuccess(data, null);
+        
+    } catch (error) {
+        console.error('Error executing SQL:', error);
+        alert(`Error executing SQL: ${error.message}`);
+    } finally {
+        executeBtn.textContent = originalText;
+        executeBtn.disabled = false;
+    }
+}
+
+// Helper functions
+function formatSQL() {
+    const editor = document.getElementById('sql-query-editor');
+    let sql = editor.value;
+    
+    // Basic SQL formatting
+    sql = sql.replace(/\s+/g, ' ').trim();
+    sql = sql.replace(/\bSELECT\b/gi, 'SELECT\n  ');
+    sql = sql.replace(/\bFROM\b/gi, '\nFROM\n  ');
+    sql = sql.replace(/\bWHERE\b/gi, '\nWHERE\n  ');
+    sql = sql.replace(/\bJOIN\b/gi, '\nJOIN\n  ');
+    sql = sql.replace(/\bGROUP BY\b/gi, '\nGROUP BY\n  ');
+    sql = sql.replace(/\bORDER BY\b/gi, '\nORDER BY\n  ');
+    sql = sql.replace(/,/g, ',\n  ');
+    
+    editor.value = sql;
+    appState.sql.query = sql;
+    
+    // Check if edited
+    if (appState.sql.mode === 'auto' && sql !== appState.sql.originalGenerated) {
+        appState.sql.isEdited = true;
+        document.getElementById('sql-query-editor').classList.add('edited');
+        document.getElementById('regenerate-btn').style.display = 'inline-block';
+    }
+    
+    updateSQLValidation();
+    saveToSessionStorage();
+}
+
+function clearSQL() {
+    if (appState.sql.query && !confirm('Clear the SQL query?')) {
+        return;
+    }
+    
+    const editor = document.getElementById('sql-query-editor');
+    editor.value = '';
+    appState.sql.query = '';
+    appState.sql.isEdited = false;
+    editor.classList.remove('edited', 'valid', 'invalid');
+    
+    document.getElementById('regenerate-btn').style.display = 'none';
+    updateSQLValidation();
+    saveToSessionStorage();
+}
+
+function updateMetadataBar(data) {
+    const metadataBar = document.getElementById('query-metadata-bar');
+    const modeSpan = document.getElementById('metadata-mode');
+    const questionSpan = document.getElementById('metadata-question');
+    const timestampSpan = document.getElementById('metadata-timestamp');
+    const rowcountSpan = document.getElementById('metadata-rowcount');
+    
+    // Mode
+    const mode = data.question ? '🤖 AI Generated' : '✍️ Manual SQL';
+    modeSpan.textContent = `Mode: ${mode}`;
+    
+    // Question (if available)
+    if (data.question) {
+        questionSpan.textContent = `Question: "${data.question}"`;
+        questionSpan.style.display = 'flex';
+    } else {
+        questionSpan.style.display = 'none';
+    }
+    
+    // Timestamp
+    const now = new Date();
+    timestampSpan.textContent = `Executed: ${now.toLocaleTimeString()}`;
+    
+    // Row count
+    const rowCount = data.row_count || 0;
+    const executionTime = data.execution_time_ms ? ` (${data.execution_time_ms.toFixed(0)}ms)` : '';
+    rowcountSpan.textContent = `Rows: ${rowCount.toLocaleString()}${executionTime}`;
+    
+    metadataBar.style.display = 'flex';
+}
+
+function handleQuerySuccess(data, question) {
+    // Store results in state
+    appState.currentQuery.results = {
+        columns: data.results.columns || [],
+        rows: data.results.rows || []
+    };
+    appState.currentQuery.sql = data.sql_query;
+    appState.currentQuery.question = question;
+    appState.currentQuery.timestamp = Date.now();
+    appState.currentQuery.executionMode = question ? 'auto' : 'manual';
+    appState.currentQuery.rowCount = data.row_count || 0;
+    appState.currentQuery.executionTimeMs = data.execution_time_ms || 0;
+    
+    // Display results in Results tab
+    displayResults(data.results);
+    
+    // Update metadata bar
+    updateMetadataBar(data);
+    
+    // Enable/disable Analysis tab based on dataset size
+    const analysisTabBtn = document.getElementById('analysis-tab-btn');
+    if (isAnalysisAvailable()) {
+        analysisTabBtn.disabled = false;
+        analysisTabBtn.title = '';
+    } else {
+        analysisTabBtn.disabled = true;
+        analysisTabBtn.title = 'Analysis requires at least 2 rows';
+    }
+    
+    // Enable visualizations tab
+    const vizTabBtn = document.getElementById('visualizations-tab-btn');
+    vizTabBtn.disabled = false;
+    vizTabBtn.title = '';
+    
+    // Switch to Results tab
+    switchTab('results');
+}
+
+function displayResults(results) {
+    const resultsOutput = document.getElementById('results-output');
+    
+    if (results.error) {
+        resultsOutput.innerHTML = `<p style="color: red;">Error: ${results.error}</p>`;
+    } else if (!results.rows || results.rows.length === 0) {
+        resultsOutput.innerHTML = '<p>Query returned no results.</p>';
+    } else {
+        resultsOutput.innerHTML = createTable(results.columns, results.rows);
+    }
+}
+
+function createTable(columns, rows) {
+    let table = '<table><thead><tr>';
+    columns.forEach(col => {
+        table += `<th>${col}</th>`;
+    });
+    table += '</tr></thead><tbody>';
+    rows.forEach(row => {
+        table += '<tr>';
+        columns.forEach(col => {
+            table += `<td>${row[col] !== null ? row[col] : 'NULL'}</td>`;
+        });
+        table += '</tr>';
+    });
+    table += '</tbody></table>';
+    return table;
+}
+
+// ============================================
+// DOM READY AND EVENT HANDLERS
+// ============================================
+
 document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.getElementById('submit-btn');
     const questionInput = document.getElementById('question-input');
@@ -487,6 +918,100 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize visualization event listeners
     initializeVisualizationListeners();
+    
+    // ============================================
+    // MANUAL SQL EDITING EVENT HANDLERS
+    // ============================================
+    
+    // Restore state from sessionStorage
+    restoreFromSessionStorage();
+    
+    // Mode switching event listeners
+    document.getElementById('auto-mode-btn').addEventListener('click', () => {
+        switchMode('auto');
+    });
+    
+    document.getElementById('manual-mode-btn').addEventListener('click', () => {
+        switchMode('manual');
+    });
+    
+    // SQL Editor events
+    const sqlEditor = document.getElementById('sql-query-editor');
+    sqlEditor.addEventListener('input', () => {
+        appState.sql.query = sqlEditor.value;
+        
+        // Check if edited in auto mode
+        if (appState.sql.mode === 'auto' && sqlEditor.value !== appState.sql.originalGenerated) {
+            appState.sql.isEdited = true;
+            sqlEditor.classList.add('edited');
+            document.getElementById('regenerate-btn').style.display = 'inline-block';
+        } else if (appState.sql.mode === 'auto' && sqlEditor.value === appState.sql.originalGenerated) {
+            appState.sql.isEdited = false;
+            sqlEditor.classList.remove('edited');
+            document.getElementById('regenerate-btn').style.display = 'none';
+        }
+        
+        updateSQLValidation();
+        saveToSessionStorage();
+    });
+    
+    // Execute button - dual purpose (generate or execute)
+    document.getElementById('execute-sql-btn').addEventListener('click', () => {
+        if (appState.sql.mode === 'manual' || appState.sql.isEdited) {
+            executeManualSQL();
+        } else {
+            // In auto mode with unedited SQL, just execute existing SQL
+            if (appState.sql.query) {
+                executeManualSQL();
+            }
+        }
+    });
+    
+    // Generate SQL button (auto mode)
+    document.getElementById('submit-btn').addEventListener('click', () => {
+        generateSQL();
+    });
+    
+    // Regenerate button
+    document.getElementById('regenerate-btn').addEventListener('click', () => {
+        if (confirm('Regenerate SQL? This will overwrite your edits.')) {
+            generateSQL();
+        }
+    });
+    
+    // Format SQL button
+    document.getElementById('format-sql-btn').addEventListener('click', () => {
+        formatSQL();
+    });
+    
+    // Clear SQL button
+    document.getElementById('clear-sql-btn').addEventListener('click', () => {
+        clearSQL();
+    });
+    
+    // Keyboard shortcut: Ctrl+Enter to execute
+    sqlEditor.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            if (!document.getElementById('execute-sql-btn').disabled) {
+                if (appState.sql.mode === 'manual' || appState.sql.isEdited) {
+                    executeManualSQL();
+                } else if (appState.sql.query) {
+                    executeManualSQL();
+                }
+            }
+        }
+    });
+    
+    // Initialize UI based on restored state
+    if (appState.sql.mode === 'manual') {
+        switchMode('manual');
+    }
+    
+    if (appState.sql.query) {
+        sqlEditor.value = appState.sql.query;
+        updateSQLValidation();
+    }
 });
 
 // ============================================
