@@ -12,6 +12,24 @@ This brainstorming session explored adding an interactive Plotly-based visualiza
 
 ---
 
+## User Persona & Context
+
+### Primary User
+**Role**: Data Analyst / Product Manager  
+**Goal**: Create flexible, programmatic visualizations with direct database connectivity  
+**Pain Points**: 
+- Wants PowerBI-like analysis capabilities but with more programming flexibility
+- Needs direct database connection without manual SQL writing (already implemented)
+- Requires custom visualization control beyond standard BI tool templates
+
+### Competitive Context
+**Compared to PowerBI**:
+- ✅ **Advantages**: Direct DB connection, programmatic flexibility, SQL query generation
+- 🎯 **Feature Parity Goal**: Interactive visualizations with data exploration
+- 🚀 **Differentiation**: Lightweight, code-first approach with full customization
+
+---
+
 ## Current State Analysis
 
 ### Existing System Capabilities
@@ -60,14 +78,14 @@ The new visualization feature will extend the existing analysis capabilities, co
 - Consistent styling and behavior with existing tab pattern
 
 #### FR2: Chart Type Selection
-- **Primary Chart Types:**
+- **Primary Chart Types (MVP):**
   - Scatter Plot (numeric X vs numeric Y)
   - Bar Chart (categorical X vs numeric Y)
   - Line Chart (ordered X vs numeric Y)
   - Histogram (single numeric column distribution)
-  - Pie Chart (categorical proportions)
 
-- **Secondary Chart Types** (future consideration):
+- **Secondary Chart Types (Post-MVP consideration):**
+  - Pie Chart (categorical proportions) - deprioritized per user feedback
   - Box Plot (categorical groups vs numeric values)
   - Heatmap (correlation matrix)
 
@@ -142,6 +160,30 @@ if (rows.length <= 1000) {
 }
 ```
 
+### Technical Design Considerations
+
+**Note**: The following technical concerns were identified during team perspective analysis and will be addressed in detail during the technical design phase:
+
+#### Critical Technical Decisions Required
+- **Plotly.js Version & Licensing**: Verify MIT license compatibility, select specific version
+- **State Management Architecture**: Define how chart state persists during tab switches
+- **API Contract**: Full specification of `/api/visualize` endpoint (request/response schema)
+- **Column Type Detection Algorithm**: Explicit logic for numeric, categorical, datetime detection
+- **Memory Management**: Research and implement Plotly.js memory leak prevention patterns
+- **Browser Support**: Define minimum browser versions (e.g., Chrome 90+, Firefox 88+, Safari 14+)
+
+#### Testing Strategy Requirements
+- **Unit Test Coverage**: Minimum 80% for new chart generation code
+- **Integration Tests**: Tab interaction, API endpoint, state management
+- **Edge Case Scenarios**: NULL values, mixed data types, special characters in column names, very long column names
+- **Performance Tests**: Dataset generation strategy for consistent testing across 100, 1K, 10K, 50K rows
+- **Regression Tests**: Ensure existing Results and Analysis tabs remain unaffected
+- **Accessibility Tests**: WCAG compliance for keyboard navigation and screen readers
+- **Cross-Browser Tests**: Chrome, Firefox, Safari, Edge on desktop and tablet
+
+#### Deferred to Technical Design Phase
+All detailed technical specifications will be documented in a separate technical design document before Phase 1 begins.
+
 ### Risk Assessment & Mitigation
 
 #### Risk 1: Large Dataset Performance
@@ -150,11 +192,15 @@ if (rows.length <= 1000) {
 
 #### Risk 2: Chart Type Complexity
 - **Impact**: Medium - Different chart types have different data requirements
-- **Mitigation**: Start with 5 core chart types, robust column compatibility logic
+- **Mitigation**: Start with 4 core chart types (MVP), robust column compatibility logic
 
 #### Risk 3: Integration Complexity
 - **Impact**: Medium - Adding to existing codebase with state management
 - **Mitigation**: Leverage existing patterns, minimal changes to current functionality
+
+#### Risk 4: Memory Leaks
+- **Impact**: Medium - Plotly.js can leak memory with dynamic chart creation
+- **Mitigation**: Research Plotly.js cleanup patterns in technical spike, implement proper disposal
 
 ---
 
@@ -168,9 +214,9 @@ if (rows.length <= 1000) {
 
 ### Phase 2: Core Charts (Week 2)
 - [ ] Implement line chart and histogram generation
-- [ ] Add pie chart functionality
 - [ ] Implement loading states and error handling
 - [ ] Column type detection and smart defaults
+- [ ] Edge case handling (NULL values, mixed types, special characters)
 
 ### Phase 3: Performance & Polish (Week 3)
 - [ ] Implement adaptive data handling (sampling/aggregation)
@@ -215,14 +261,21 @@ if (rows.length <= 1000) {
 
 ### Design Phase (Next Week)
 1. **Detailed Wireframes**: Complete UI design for all chart types and states
-2. **API Specification**: Define `/api/visualize` endpoint contract
-3. **Error Handling Specification**: Document all error conditions and user messages
-4. **Performance Testing Plan**: Define benchmarks and testing methodology
+2. **Technical Design Document**: Address all critical technical decisions (API contract, state management, memory management, column detection algorithm)
+3. **Test Plan Creation**: Comprehensive test strategy covering unit, integration, edge cases, performance, regression, accessibility, and cross-browser tests
+4. **Error Handling Specification**: Document all error conditions and user messages
+5. **Sprint Structure Definition**: Map 4-week phases to 2-week sprints with Definition of Done for each
 
-### Development Kickoff
+### Development Kickoff Requirements
 - **Estimated Effort**: 3-4 weeks full-time development
 - **Resource Requirements**: 1 full-stack developer, 0.5 FTE designer for UI refinement
 - **Dependencies**: Completion of current analysis feature (nearly complete)
+- **Pre-Development Checklist**:
+  - [ ] Technical design document approved
+  - [ ] Test plan reviewed and approved
+  - [ ] API contract defined and validated
+  - [ ] Sprint structure and DoD established
+  - [ ] Technical spike completed with prototype
 
 ---
 
