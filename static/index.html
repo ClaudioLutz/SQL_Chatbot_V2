@@ -22,6 +22,9 @@
         <button class="tab-button" data-tab="analysis" id="analysis-tab-btn">
             Analysis
         </button>
+        <button class="tab-button" data-tab="visualizations" id="visualizations-tab-btn">
+            Visualizations
+        </button>
     </div>
 
     <!-- NEW: Results Tab Content -->
@@ -39,6 +42,88 @@
         <div id="analysis-output"></div>
         <div id="analysis-error" class="error-message" style="display: none;"></div>
     </div>
+
+    <!-- NEW: Visualizations Tab Content -->
+    <div id="visualizations-tab" class="tab-content">
+        <h2>Interactive Visualizations:</h2>
+        
+        <!-- Unavailable message (shown when dataset not suitable) -->
+        <div id="viz-unavailable" class="viz-unavailable" style="display: none;">
+            <p>Visualizations are not available for this dataset.</p>
+            <p class="reason"></p>
+        </div>
+        
+        <!-- Chart type selector (initial state) -->
+        <div id="chart-type-selector" class="chart-type-selector">
+            <button class="chart-type-button" data-chart="scatter" aria-label="Create scatter plot visualization">
+                <span class="icon">📊</span>
+                <span class="label">Scatter Plot</span>
+            </button>
+            <button class="chart-type-button" data-chart="bar" aria-label="Create bar chart visualization">
+                <span class="icon">📶</span>
+                <span class="label">Bar Chart</span>
+            </button>
+            <button class="chart-type-button" data-chart="line" aria-label="Create line chart visualization">
+                <span class="icon">📈</span>
+                <span class="label">Line Chart</span>
+            </button>
+            <button class="chart-type-button" data-chart="histogram" aria-label="Create histogram visualization">
+                <span class="icon">📜</span>
+                <span class="label">Histogram</span>
+            </button>
+        </div>
+        
+        <!-- Configuration state: Axis selectors -->
+        <div id="axis-config" class="axis-config" style="display: none;">
+            <div class="chart-type-dropdown">
+                <label for="chart-type-select">Chart Type:</label>
+                <select id="chart-type-select" class="chart-selector" aria-label="Select chart type">
+                    <option value="scatter">Scatter Plot</option>
+                    <option value="bar">Bar Chart</option>
+                    <option value="line">Line Chart</option>
+                    <option value="histogram">Histogram</option>
+                </select>
+            </div>
+            
+            <div class="axis-selector-wrapper">
+                <label for="x-axis-select" class="axis-selector-label">
+                    <span id="x-axis-label">X-Axis:</span>
+                </label>
+                <select id="x-axis-select" class="axis-selector" aria-label="Select column for X-axis">
+                    <option value="">Select Column</option>
+                </select>
+            </div>
+            
+            <div class="axis-selector-wrapper" id="y-axis-wrapper">
+                <label for="y-axis-select" class="axis-selector-label">
+                    <span id="y-axis-label">Y-Axis:</span>
+                </label>
+                <select id="y-axis-select" class="axis-selector" aria-label="Select column for Y-axis">
+                    <option value="">Select Column</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- Loading state -->
+        <div id="chart-loading" class="skeleton-chart" style="display: none;">
+            <div class="skeleton-bar"></div>
+            <div class="skeleton-bar"></div>
+            <div class="skeleton-bar"></div>
+            <div class="skeleton-bar"></div>
+            <div class="skeleton-bar"></div>
+            <p class="loading-text">Generating chart...</p>
+        </div>
+        
+        <!-- Chart container -->
+        <div id="chart-container" class="chart-container" role="img" aria-label="Visualization chart"></div>
+        
+        <!-- Sampling notice -->
+        <div id="sampling-notice" class="sampling-notice" role="status" aria-live="polite" style="display: none;"></div>
+        
+        <!-- Error display -->
+        <div id="chart-error" class="chart-error" role="alert" aria-live="assertive" style="display: none;"></div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>

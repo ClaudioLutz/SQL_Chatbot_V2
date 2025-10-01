@@ -14,6 +14,20 @@ const appState = {
         status: "idle", // idle | loading | success | error | too_large | insufficient_rows
         error: null
     },
+    visualization: {
+        isAvailable: false,
+        plotlyLoaded: false,
+        status: "idle", // idle | loading | success | error
+        error: null,
+        chartType: null,
+        xColumn: null,
+        yColumn: null,
+        columnTypes: {},
+        chartData: null,
+        isSampled: false,
+        originalRowCount: null,
+        sampledRowCount: null
+    },
     ui: {
         activeTab: "results"
     }
@@ -75,6 +89,11 @@ function switchTab(tabName) {
             // Analysis already loaded, just display it
             renderAnalysis(appState.analysis.data);
         }
+    }
+    
+    // If switching to visualizations tab, initialize it
+    if (tabName === 'visualizations') {
+        initializeVisualizationTab();
     }
 }
 
@@ -393,6 +412,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const analysisTabBtn = document.getElementById('analysis-tab-btn');
             analysisTabBtn.disabled = true;
             analysisTabBtn.title = 'No data available for analysis';
+            
+            // Disable visualizations tab on error
+            const vizTabBtn = document.getElementById('visualizations-tab-btn');
+            vizTabBtn.disabled = true;
+            vizTabBtn.title = 'No data available for visualization';
         }
     });
 
@@ -421,6 +445,14 @@ document.addEventListener('DOMContentLoaded', () => {
             analysisTabBtn.disabled = true;
             analysisTabBtn.title = 'Analysis requires at least 2 rows';
         }
+        
+        // Reset visualization state for new query
+        resetVisualizationState();
+        
+        // Enable visualizations tab (will check availability when clicked)
+        const vizTabBtn = document.getElementById('visualizations-tab-btn');
+        vizTabBtn.disabled = false;
+        vizTabBtn.title = '';
         
         // Switch to Results tab (default)
         switchTab('results');
@@ -452,4 +484,449 @@ document.addEventListener('DOMContentLoaded', () => {
         table += '</tbody></table>';
         return table;
     }
+    
+    // Initialize visualization event listeners
+    initializeVisualizationListeners();
 });
+
+// ============================================
+// VISUALIZATION TAB LOGIC
+// ============================================
+
+function resetVisualizationState() {
+    appState.visualization = {
+        isAvailable: false,
+        plotlyLoaded: appState.visualization.plotlyLoaded, // Keep plotly loaded status
+        status: "idle",
+        error: null,
+        chartType: null,
+        xColumn: null,
+        yColumn: null,
+        columnTypes: {},
+        chartData: null,
+        isSampled: false,
+        originalRowCount: null,
+        sampledRowCount: null
+    };
+}
+
+function initializeVisualizationListeners() {
+    // Chart type button listeners
+    document.querySelectorAll('.chart-type-button').forEach(button => {
+        button.addEventListener('click', () => {
+            const chartType = button.dataset.chart;
+            handleChartTypeSelection(chartType);
+        });
+    });
+    
+    // Chart type dropdown listener
+    document.getElementById('chart-type-select').addEventListener('change', (e) => {
+        handleChartTypeChange(e.target.value);
+    });
+    
+    // Axis selector listeners
+    document.getElementById('x-axis-select').addEventListener('change', handleAxisSelection);
+    document.getElementById('y-axis-select').addEventListener('change', handleAxisSelection);
+}
+
+async function initializeVisualizationTab() {
+    const results = appState.currentQuery.results;
+    
+    // Reset UI visibility
+    document.getElementById('viz-unavailable').style.display = 'none';
+    document.getElementById('chart-type-selector').style.display = 'none';
+    document.getElementById('axis-config').style.display = 'none';
+    document.getElementById('chart-container').style.display = 'none';
+    document.getElementById('chart-error').style.display = 'none';
+    document.getElementById('sampling-notice').style.display = 'none';
+    
+    // Check if visualization is available
+    const availability = await checkVisualizationAvailability(results);
+    
+    if (!availability.available) {
+        showVisualizationUnavailable(availability.reason);
+        return;
+    }
+    
+    // Store column types and mark as available
+    appState.visualization.columnTypes = availability.column_types;
+    appState.visualization.isAvailable = true;
+    
+    // Load Plotly if needed
+    if (!appState.visualization.plotlyLoaded) {
+        await loadPlotly();
+    }
+    
+    // Show chart type selector or restore previous state
+    if (appState.visualization.chartData) {
+        // Restore previous chart
+        document.getElementById('axis-config').style.display = 'flex';
+        document.getElementById('chart-type-select').value = appState.visualization.chartType;
+        populateAxisDropdowns(appState.visualization.chartType);
+        document.getElementById('x-axis-select').value = appState.visualization.xColumn;
+        if (appState.visualization.yColumn) {
+            document.getElementById('y-axis-select').value = appState.visualization.yColumn;
+        }
+        renderChart(appState.visualization.chartData);
+        if (appState.visualization.isSampled) {
+            showSamplingNotice(appState.visualization.originalRowCount, appState.visualization.sampledRowCount);
+        }
+    } else {
+        // Show chart type selector
+        document.getElementById('chart-type-selector').style.display = 'flex';
+    }
+}
+
+async function checkVisualizationAvailability(results) {
+    if (!results || !results.rows || results.rows.length < 2) {
+        return {
+            available: false,
+            reason: "At least 2 rows required for visualization."
+        };
+    }
+    
+    try {
+        const response = await fetch('/api/check-visualization', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                columns: results.columns,
+                rows: results.rows
+            })
+        });
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Error checking visualization availability:', error);
+        return {
+            available: false,
+            reason: "Error checking visualization availability."
+        };
+    }
+}
+
+async function loadPlotly() {
+    return new Promise((resolve, reject) => {
+        if (appState.visualization.plotlyLoaded) {
+            resolve();
+            return;
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'lib/plotly.min.js';
+        script.onload = () => {
+            appState.visualization.plotlyLoaded = true;
+            resolve();
+        };
+        script.onerror = () => {
+            reject(new Error('Failed to load Plotly.js library'));
+        };
+        document.head.appendChild(script);
+    });
+}
+
+function handleChartTypeSelection(chartType) {
+    appState.visualization.chartType = chartType;
+    appState.visualization.xColumn = null;
+    appState.visualization.yColumn = null;
+    
+    // Hide chart type selector, show axis config
+    document.getElementById('chart-type-selector').style.display = 'none';
+    document.getElementById('axis-config').style.display = 'flex';
+    
+    // Set dropdown value
+    document.getElementById('chart-type-select').value = chartType;
+    
+    // Update axis labels and populate dropdowns
+    updateAxisLabelsForChartType(chartType);
+    populateAxisDropdowns(chartType);
+}
+
+function handleChartTypeChange(newChartType) {
+    const oldChartType = appState.visualization.chartType;
+    appState.visualization.chartType = newChartType;
+    
+    // Check if current selections are compatible
+    const compatibility = {
+        scatter: {x: ['numeric'], y: ['numeric']},
+        bar: {x: ['categorical'], y: ['numeric']},
+        line: {x: ['datetime', 'numeric'], y: ['numeric']},
+        histogram: {x: ['numeric']}
+    };
+    
+    const newReq = compatibility[newChartType];
+    const xType = appState.visualization.xColumn ? appState.visualization.columnTypes[appState.visualization.xColumn] : null;
+    const yType = appState.visualization.yColumn ? appState.visualization.columnTypes[appState.visualization.yColumn] : null;
+    
+    const xCompatible = xType && newReq.x.includes(xType);
+    const yCompatible = !newReq.y || (yType && newReq.y.includes(yType));
+    
+    if (!xCompatible) appState.visualization.xColumn = null;
+    if (!yCompatible) appState.visualization.yColumn = null;
+    
+    // Update UI
+    updateAxisLabelsForChartType(newChartType);
+    populateAxisDropdowns(newChartType);
+    
+    // Clear chart
+    cleanupChart();
+}
+
+function updateAxisLabelsForChartType(chartType) {
+    const labels = {
+        scatter: {x: 'X-Axis (Numeric)', y: 'Y-Axis (Numeric)'},
+        bar: {x: 'X-Axis (Categorical)', y: 'Y-Axis (Numeric)'},
+        line: {x: 'X-Axis (Time/Numeric)', y: 'Y-Axis (Numeric)'},
+        histogram: {x: 'Column (Numeric)', y: null}
+    };
+    
+    document.getElementById('x-axis-label').textContent = labels[chartType].x;
+    
+    const yWrapper = document.getElementById('y-axis-wrapper');
+    if (labels[chartType].y) {
+        yWrapper.style.display = 'block';
+        document.getElementById('y-axis-label').textContent = labels[chartType].y;
+    } else {
+        yWrapper.style.display = 'none';
+    }
+}
+
+function populateAxisDropdowns(chartType) {
+    const xSelect = document.getElementById('x-axis-select');
+    const ySelect = document.getElementById('y-axis-select');
+    
+    // Clear and reset
+    xSelect.innerHTML = '<option value="">Select Column</option>';
+    ySelect.innerHTML = '<option value="">Select Column</option>';
+    
+    // Get compatible columns
+    const compatibleX = getCompatibleColumns(chartType, 'x');
+    const compatibleY = chartType !== 'histogram' ? getCompatibleColumns(chartType, 'y') : [];
+    
+    // Populate X-axis
+    compatibleX.forEach(col => {
+        const option = document.createElement('option');
+        option.value = col;
+        option.textContent = col;
+        xSelect.appendChild(option);
+    });
+    
+    // Populate Y-axis
+    if (chartType !== 'histogram') {
+        compatibleY.forEach(col => {
+            const option = document.createElement('option');
+            option.value = col;
+            option.textContent = col;
+            ySelect.appendChild(option);
+        });
+    }
+}
+
+function getCompatibleColumns(chartType, axis) {
+    const compatibility = {
+        scatter: {x: ['numeric'], y: ['numeric']},
+        bar: {x: ['categorical'], y: ['numeric']},
+        line: {x: ['datetime', 'numeric'], y: ['numeric']},
+        histogram: {x: ['numeric']}
+    };
+    
+    const allowedTypes = compatibility[chartType][axis];
+    return Object.keys(appState.visualization.columnTypes).filter(col =>
+        allowedTypes.includes(appState.visualization.columnTypes[col])
+    );
+}
+
+let chartGenerationTimeout = null;
+
+function handleAxisSelection() {
+    const xColumn = document.getElementById('x-axis-select').value;
+    const yColumn = document.getElementById('y-axis-select').value;
+    const chartType = appState.visualization.chartType;
+    
+    appState.visualization.xColumn = xColumn || null;
+    appState.visualization.yColumn = yColumn || null;
+    
+    clearTimeout(chartGenerationTimeout);
+    
+    const hasAllColumns = xColumn && (chartType === 'histogram' || yColumn);
+    
+    if (hasAllColumns) {
+        chartGenerationTimeout = setTimeout(() => {
+            generateChart();
+        }, 300);
+    }
+}
+
+async function generateChart() {
+    const {chartType, xColumn, yColumn} = appState.visualization;
+    const results = appState.currentQuery.results;
+    
+    appState.visualization.status = 'loading';
+    
+    // Show loading
+    document.getElementById('chart-loading').style.display = 'block';
+    document.getElementById('chart-container').style.display = 'none';
+    document.getElementById('chart-error').style.display = 'none';
+    document.getElementById('sampling-notice').style.display = 'none';
+    
+    try {
+        let chartData;
+        
+        if (results.rows.length > 10000) {
+            // Large dataset: use backend
+            const response = await fetch('/api/visualize', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    columns: results.columns,
+                    rows: results.rows,
+                    chartType,
+                    xColumn,
+                    yColumn
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'error') {
+                throw new Error(result.message);
+            }
+            
+            if (result.status === 'too_large') {
+                throw new Error(result.message);
+            }
+            
+            if (result.is_sampled) {
+                appState.visualization.isSampled = true;
+                appState.visualization.originalRowCount = result.original_row_count;
+                appState.visualization.sampledRowCount = result.sampled_row_count;
+                showSamplingNotice(result.original_row_count, result.sampled_row_count);
+            }
+            
+            chartData = prepareChartDataClientSide({
+                rows: result.data.rows,
+                chartType,
+                xColumn,
+                yColumn
+            });
+        } else {
+            // Small dataset: process client-side
+            chartData = prepareChartDataClientSide({
+                rows: results.rows,
+                chartType,
+                xColumn,
+                yColumn
+            });
+        }
+        
+        await renderChart(chartData);
+        appState.visualization.status = 'success';
+        appState.visualization.chartData = chartData;
+        
+    } catch (error) {
+        console.error('Chart generation error:', error);
+        appState.visualization.status = 'error';
+        appState.visualization.error = error.message;
+        showChartError(error.message);
+    } finally {
+        document.getElementById('chart-loading').style.display = 'none';
+    }
+}
+
+function prepareChartDataClientSide({rows, chartType, xColumn, yColumn}) {
+    const plotlyData = [];
+    const layout = {
+        autosize: true,
+        margin: {l: 60, r: 40, t: 60, b: 80}
+    };
+    const config = {responsive: true, displayModeBar: true};
+    
+    switch (chartType) {
+        case 'scatter':
+            plotlyData.push({
+                x: rows.map(r => r[xColumn]),
+                y: rows.map(r => r[yColumn]),
+                mode: 'markers',
+                type: 'scatter',
+                marker: {size: 8, color: '#0066CC'}
+            });
+            layout.title = `${yColumn} vs ${xColumn}`;
+            layout.xaxis = {title: xColumn};
+            layout.yaxis = {title: yColumn};
+            break;
+            
+        case 'bar':
+            plotlyData.push({
+                x: rows.map(r => r[xColumn]),
+                y: rows.map(r => r[yColumn]),
+                type: 'bar',
+                marker: {color: '#0066CC'}
+            });
+            layout.title = `${yColumn} by ${xColumn}`;
+            layout.xaxis = {title: xColumn};
+            layout.yaxis = {title: yColumn};
+            break;
+            
+        case 'line':
+            plotlyData.push({
+                x: rows.map(r => r[xColumn]),
+                y: rows.map(r => r[yColumn]),
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: {color: '#0066CC'}
+            });
+            layout.title = `${yColumn} over ${xColumn}`;
+            layout.xaxis = {title: xColumn};
+            layout.yaxis = {title: yColumn};
+            break;
+            
+        case 'histogram':
+            plotlyData.push({
+                x: rows.map(r => r[xColumn]),
+                type: 'histogram',
+                marker: {color: '#0066CC'}
+            });
+            layout.title = `Distribution of ${xColumn}`;
+            layout.xaxis = {title: xColumn};
+            layout.yaxis = {title: 'Frequency'};
+            break;
+    }
+    
+    return {data: plotlyData, layout, config};
+}
+
+async function renderChart(chartData) {
+    cleanupChart();
+    
+    const container = document.getElementById('chart-container');
+    container.style.display = 'block';
+    
+    await Plotly.newPlot(container, chartData.data, chartData.layout, chartData.config);
+}
+
+function cleanupChart() {
+    const chartContainer = document.getElementById('chart-container');
+    if (chartContainer && window.Plotly && chartContainer.data) {
+        Plotly.purge(chartContainer);
+        chartContainer.innerHTML = '';
+    }
+}
+
+function showSamplingNotice(originalCount, sampledCount) {
+    const notice = document.getElementById('sampling-notice');
+    notice.textContent = `* Data sampled for performance. Displaying ${sampledCount.toLocaleString()} of ${originalCount.toLocaleString()} rows.`;
+    notice.style.display = 'block';
+}
+
+function showChartError(message) {
+    const errorDiv = document.getElementById('chart-error');
+    errorDiv.textContent = `⚠️ ${message}`;
+    errorDiv.style.display = 'block';
+    document.getElementById('chart-container').style.display = 'none';
+}
+
+function showVisualizationUnavailable(reason) {
+    document.getElementById('viz-unavailable').style.display = 'block';
+    document.querySelector('#viz-unavailable .reason').textContent = reason;
+    document.getElementById('chart-type-selector').style.display = 'none';
+}
