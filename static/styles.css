@@ -7,9 +7,21 @@ body {
 }
 
 textarea {
-    width: 80%;
+    width: 100%;
     height: 100px;
-    margin-bottom: 1rem;
+    margin-bottom: 0;
+    padding: 12px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+textarea:focus {
+    outline: none;
+    border-color: #007bff;
 }
 
 button {
@@ -437,16 +449,29 @@ th {
 .input-container {
     width: 80%;
     margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .input-container.hidden {
     display: none;
 }
 
+.input-container textarea {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 0;
+}
+
+.input-container button {
+    align-self: flex-end;
+}
+
 /* SQL Editor Section */
 .sql-editor-section {
     width: 80%;
-    margin-bottom: 20px;
+    margin-bottom: 30px;
 }
 
 .sql-editor-header {
@@ -629,6 +654,234 @@ th {
     display: none;
 }
 
+/* ============================================
+   AG GRID STYLES
+   ============================================ */
+
+/* AG Grid Container */
+#results-grid {
+    height: 600px;
+    width: 100%;
+    margin-top: 10px;
+}
+
+/* Results Header */
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.results-header h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #333;
+}
+
+#results-row-count {
+    color: #007bff;
+    font-weight: 600;
+}
+
+/* Toolbar */
+.results-toolbar {
+    display: flex;
+    gap: 8px;
+}
+
+.toolbar-btn {
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.toolbar-btn:hover {
+    background: #f8f9fa;
+    border-color: #007bff;
+}
+
+.toolbar-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Status Bar */
+.status-bar {
+    display: flex;
+    gap: 16px;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-top: none;
+    font-size: 13px;
+    color: #666;
+}
+
+.status-bar span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Loading State */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 400px;
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.loading-state .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.loading-state p {
+    margin-top: 16px;
+    color: #666;
+    font-size: 14px;
+}
+
+/* Empty State */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 400px;
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.empty-state h3 {
+    margin: 0 0 8px 0;
+    color: #333;
+    font-size: 18px;
+}
+
+.empty-state p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+}
+
+/* Error State */
+.error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 400px;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+}
+
+.error-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.error-state h3 {
+    margin: 0 0 8px 0;
+    color: #856404;
+    font-size: 18px;
+}
+
+.error-state p {
+    margin: 0 0 16px 0;
+    color: #856404;
+    font-size: 14px;
+}
+
+.retry-btn {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 4px;
+    background: #007bff;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.retry-btn:hover {
+    background: #0056b3;
+}
+
+/* AG Grid Custom Styles */
+.ag-theme-alpine {
+    --ag-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    --ag-font-size: 14px;
+    --ag-header-height: 48px;
+    --ag-row-height: 36px;
+    --ag-header-background-color: #f8f9fa;
+    --ag-odd-row-background-color: #ffffff;
+    --ag-row-hover-color: #f0f7ff;
+}
+
+/* NULL value styling */
+.null-value {
+    color: #999;
+    font-style: italic;
+}
+
+/* Notification Toast */
+.notification-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 4px;
+    background: #333;
+    color: white;
+    font-size: 14px;
+    z-index: 10000;
+    animation: slideIn 0.3s ease-out;
+}
+
+.notification-toast.success {
+    background: #28a745;
+}
+
+.notification-toast.info {
+    background: #17a2b8;
+}
+
+.notification-toast.error {
+    background: #dc3545;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .stats-grid {
@@ -651,6 +904,34 @@ th {
     .analysis-table td {
         padding: 8px;
     }
+    
+    /* AG Grid responsive */
+    #results-grid {
+        height: 400px;
+    }
+    
+    .results-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .results-toolbar {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    .toolbar-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .status-bar {
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+    }
+    
     
     /* Visualization responsive */
     .chart-type-selector {

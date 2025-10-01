@@ -375,6 +375,21 @@ function formatNumber(value) {
     return value.toFixed(2);
 }
 
+function formatDate(value) {
+    if (value === null || value === undefined) {
+        return 'N/A';
+    }
+    try {
+        const date = new Date(value);
+        if (isNaN(date.getTime())) {
+            return value;
+        }
+        return date.toLocaleDateString();
+    } catch {
+        return value;
+    }
+}
+
 // ============================================
 // MANUAL SQL EDITING FUNCTIONS
 // ============================================
@@ -761,18 +776,283 @@ function handleQuerySuccess(data, question) {
     switchTab('results');
 }
 
+// ============================================
+// AG GRID INTEGRATION
+// ============================================
+
+// AG Grid instance
+let gridApi = null;
+let gridColumnApi = null;
+
 function displayResults(results) {
-    const resultsOutput = document.getElementById('results-output');
-    
     if (results.error) {
-        resultsOutput.innerHTML = `<p style="color: red;">Error: ${results.error}</p>`;
+        showResultsError(results.error);
     } else if (!results.rows || results.rows.length === 0) {
-        resultsOutput.innerHTML = '<p>Query returned no results.</p>';
+        showResultsEmpty();
     } else {
-        resultsOutput.innerHTML = createTable(results.columns, results.rows);
+        displayResultsWithAGGrid(results.columns, results.rows);
     }
 }
 
+function displayResultsWithAGGrid(columns, rows) {
+    const gridContainer = document.getElementById('results-grid');
+    const loadingState = document.getElementById('results-loading');
+    const emptyState = document.getElementById('results-empty');
+    const errorState = document.getElementById('results-error');
+    const rowCountSpan = document.getElementById('results-row-count');
+    
+    // Hide all states
+    loadingState.style.display = 'none';
+    emptyState.style.display = 'none';
+    errorState.style.display = 'none';
+    gridContainer.style.display = 'none';
+    
+    // Handle empty results
+    if (!rows || rows.length === 0) {
+        showResultsEmpty();
+        return;
+    }
+    
+    // Show loading
+    loadingState.style.display = 'flex';
+    
+    try {
+        // Destroy existing grid
+        if (gridApi) {
+            gridApi.destroy();
+            gridApi = null;
+            gridColumnApi = null;
+        }
+        
+        // Create column definitions
+        const columnDefs = createColumnDefs(columns, rows);
+        
+        // Get optimized grid options based on row count
+        const optimizedOptions = getOptimizedGridOptions(rows.length);
+        
+        // Configure grid
+        const gridOptions = {
+            ...optimizedOptions,
+            columnDefs: columnDefs,
+            rowData: rows,
+            onGridReady: (params) => {
+                gridApi = params.api;
+                gridColumnApi = params.columnApi;
+                
+                // Auto-size columns on first render
+                params.api.sizeColumnsToFit();
+                
+                // Hide loading, show grid
+                loadingState.style.display = 'none';
+                gridContainer.style.display = 'block';
+                
+                // Update status bar
+                updateStatusBar();
+            },
+            onSortChanged: updateStatusBar,
+            onFilterChanged: updateStatusBar,
+            onFirstDataRendered: (params) => {
+                console.log(`AG Grid rendered with ${rows.length} rows`);
+            }
+        };
+        
+        // Initialize grid
+        new agGrid.Grid(gridContainer, gridOptions);
+        
+        // Update row count
+        rowCountSpan.textContent = `${rows.length.toLocaleString()} rows × ${columns.length} columns`;
+        
+    } catch (error) {
+        console.error('Error initializing AG Grid:', error);
+        showResultsError(error.message);
+    }
+}
+
+function createColumnDefs(columns, rows) {
+    return columns.map(col => {
+        const columnType = detectColumnType(col, rows);
+        
+        const colDef = {
+            field: col,
+            headerName: col,
+            sortable: true,
+            filter: true,
+            resizable: true,
+            minWidth: 100,
+            flex: 1,
+            
+            // NULL value handling
+            valueGetter: params => {
+                const value = params.data[col];
+                return value === null || value === undefined ? null : value;
+            },
+            
+            cellRenderer: params => {
+                if (params.value === null || params.value === undefined) {
+                    return '<span class="null-value">NULL</span>';
+                }
+                return params.value;
+            }
+        };
+        
+        // Type-specific configuration
+        if (columnType === 'number') {
+            colDef.type = 'numericColumn';
+            colDef.filter = 'agNumberColumnFilter';
+            colDef.valueFormatter = params => formatNumber(params.value);
+        } else if (columnType === 'date') {
+            colDef.filter = 'agDateColumnFilter';
+            colDef.valueFormatter = params => formatDate(params.value);
+        } else {
+            colDef.filter = 'agTextColumnFilter';
+        }
+        
+        return colDef;
+    });
+}
+
+function detectColumnType(columnName, rows) {
+    // Sample first 100 rows to detect type
+    const sample = rows.slice(0, Math.min(100, rows.length));
+    const values = sample.map(row => row[columnName]).filter(v => v !== null && v !== undefined);
+    
+    if (values.length === 0) return 'text';
+    
+    // Check if numeric
+    const numericCount = values.filter(v => typeof v === 'number' || !isNaN(Number(v))).length;
+    if (numericCount / values.length > 0.8) {
+        return 'number';
+    }
+    
+    // Check if date
+    const dateCount = values.filter(v => !isNaN(Date.parse(v))).length;
+    if (dateCount / values.length > 0.8) {
+        return 'date';
+    }
+    
+    return 'text';
+}
+
+function getOptimizedGridOptions(rowCount) {
+    const baseOptions = {
+        rowBuffer: 10,
+        rowModelType: 'clientSide',
+        enableSorting: true,
+        enableFilter: true,
+        enableColResize: true,
+        enableRangeSelection: true,
+        animateRows: false,
+        suppressRowHoverHighlight: false,
+        suppressCellFocus: false,
+        pagination: false,
+        suppressMenuHide: false,
+        ensureDomOrder: true,
+        defaultColDef: {
+            sortable: true,
+            filter: true,
+            resizable: true,
+            minWidth: 100,
+            flex: 1
+        }
+    };
+    
+    if (rowCount > 100000) {
+        return {
+            ...baseOptions,
+            animateRows: false,
+            suppressRowHoverHighlight: true,
+            rowBuffer: 5,
+            suppressColumnVirtualisation: false,
+            enableCellTextSelection: false,
+            suppressCellFocus: true
+        };
+    }
+    
+    if (rowCount > 1000000) {
+        return {
+            ...baseOptions,
+            animateRows: false,
+            suppressRowHoverHighlight: true,
+            rowBuffer: 3,
+            suppressColumnVirtualisation: false,
+            enableCellTextSelection: false,
+            suppressCellFocus: true,
+            enableRangeSelection: false
+        };
+    }
+    
+    return baseOptions;
+}
+
+function updateStatusBar() {
+    if (!gridApi) return;
+    
+    const totalRows = gridApi.getDisplayedRowCount();
+    const model = gridApi.getModel();
+    const filteredRows = model.getRowCount();
+    const isFiltered = gridApi.isAnyFilterPresent();
+    
+    // Update row count
+    const firstRow = gridApi.getFirstDisplayedRow() + 1;
+    const lastRow = gridApi.getLastDisplayedRow() + 1;
+    document.getElementById('status-rows').textContent = 
+        `Rows ${firstRow.toLocaleString()}-${lastRow.toLocaleString()} of ${totalRows.toLocaleString()}`;
+    
+    // Update filter status
+    const filterStatus = document.getElementById('status-filters');
+    const clearFiltersBtn = document.getElementById('clear-filters-btn');
+    if (isFiltered) {
+        filterStatus.style.display = 'inline';
+        filterStatus.textContent = `🔍 ${filteredRows.toLocaleString()} of ${totalRows.toLocaleString()} rows (filtered)`;
+        clearFiltersBtn.style.display = 'inline-block';
+    } else {
+        filterStatus.style.display = 'none';
+        clearFiltersBtn.style.display = 'none';
+    }
+    
+    // Update sort status
+    const sortStatus = document.getElementById('status-sort');
+    const sortModel = gridApi.getSortModel();
+    if (sortModel && sortModel.length > 0) {
+        sortStatus.style.display = 'inline';
+        const sortDesc = sortModel.map(s => `${s.colId} ${s.sort === 'asc' ? '↑' : '↓'}`).join(', ');
+        sortStatus.textContent = `↕️ Sorted by ${sortModel.length} column${sortModel.length > 1 ? 's' : ''}`;
+        sortStatus.title = sortDesc;
+    } else {
+        sortStatus.style.display = 'none';
+    }
+}
+
+function showResultsEmpty() {
+    document.getElementById('results-grid').style.display = 'none';
+    document.getElementById('results-loading').style.display = 'none';
+    document.getElementById('results-error').style.display = 'none';
+    document.getElementById('results-empty').style.display = 'flex';
+    document.getElementById('results-row-count').textContent = '0 rows';
+}
+
+function showResultsError(message) {
+    document.getElementById('results-grid').style.display = 'none';
+    document.getElementById('results-loading').style.display = 'none';
+    document.getElementById('results-empty').style.display = 'none';
+    document.getElementById('results-error').style.display = 'flex';
+    document.getElementById('error-message').textContent = message;
+}
+
+function showNotification(message, type = 'info') {
+    console.log(`[${type.toUpperCase()}] ${message}`);
+    
+    const toast = document.createElement('div');
+    toast.className = `notification-toast ${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
+
+// Legacy table creation function (kept for backward compatibility)
 function createTable(columns, rows) {
     let table = '<table><thead><tr>';
     columns.forEach(col => {
@@ -795,129 +1075,59 @@ function createTable(columns, rows) {
 // ============================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    const submitBtn = document.getElementById('submit-btn');
-    const questionInput = document.getElementById('question-input');
-    const sqlQueryOutput = document.getElementById('sql-query-output');
-    const resultsOutput = document.getElementById('results-output');
-
     // Initialize tabs
     initializeTabs();
-
-    submitBtn.addEventListener('click', async () => {
-        const question = questionInput.value;
-        if (!question) {
-            alert('Please enter a question.');
-            return;
-        }
-
-        sqlQueryOutput.textContent = 'Generating SQL...';
-        resultsOutput.innerHTML = '';
-
-        // Reset analysis state for new query
-        resetAnalysisState();
-
-        try {
-            const response = await fetch('/api/query', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ question: question }),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            
-            // Handle query success
-            handleQuerySuccess(data, question);
-            
-        } catch (error) {
-            sqlQueryOutput.textContent = 'An error occurred.';
-            resultsOutput.innerHTML = `<p style="color: red;">${error.message}</p>`;
-            console.error('Error:', error);
-            
-            // Disable analysis tab on error
-            const analysisTabBtn = document.getElementById('analysis-tab-btn');
-            analysisTabBtn.disabled = true;
-            analysisTabBtn.title = 'No data available for analysis';
-            
-            // Disable visualizations tab on error
-            const vizTabBtn = document.getElementById('visualizations-tab-btn');
-            vizTabBtn.disabled = true;
-            vizTabBtn.title = 'No data available for visualization';
-        }
-    });
-
-    function handleQuerySuccess(data, question) {
-        // Display SQL query
-        sqlQueryOutput.textContent = data.sql_query || "No SQL generated.";
-        
-        // Store results in state
-        appState.currentQuery.results = {
-            columns: data.results.columns || [],
-            rows: data.results.rows || []
-        };
-        appState.currentQuery.sql = data.sql_query;
-        appState.currentQuery.question = question;
-        appState.currentQuery.timestamp = Date.now();
-        
-        // Display results in Results tab
-        displayResults(data.results);
-        
-        // Enable/disable Analysis tab based on dataset size
-        const analysisTabBtn = document.getElementById('analysis-tab-btn');
-        if (isAnalysisAvailable()) {
-            analysisTabBtn.disabled = false;
-            analysisTabBtn.title = '';
-        } else {
-            analysisTabBtn.disabled = true;
-            analysisTabBtn.title = 'Analysis requires at least 2 rows';
-        }
-        
-        // Reset visualization state for new query
-        resetVisualizationState();
-        
-        // Enable visualizations tab (will check availability when clicked)
-        const vizTabBtn = document.getElementById('visualizations-tab-btn');
-        vizTabBtn.disabled = false;
-        vizTabBtn.title = '';
-        
-        // Switch to Results tab (default)
-        switchTab('results');
-    }
-
-    function displayResults(results) {
-        if (results.error) {
-            resultsOutput.innerHTML = `<p style="color: red;">Error: ${results.error}</p>`;
-        } else if (!results.rows || results.rows.length === 0) {
-            resultsOutput.innerHTML = '<p>Query returned no results.</p>';
-        } else {
-            resultsOutput.innerHTML = createTable(results.columns, results.rows);
-        }
-    }
-
-    function createTable(columns, rows) {
-        let table = '<table><thead><tr>';
-        columns.forEach(col => {
-            table += `<th>${col}</th>`;
-        });
-        table += '</tr></thead><tbody>';
-        rows.forEach(row => {
-            table += '<tr>';
-            columns.forEach(col => {
-                table += `<td>${row[col] !== null ? row[col] : 'NULL'}</td>`;
-            });
-            table += '</tr>';
-        });
-        table += '</tbody></table>';
-        return table;
-    }
     
     // Initialize visualization event listeners
     initializeVisualizationListeners();
+    
+    // ============================================
+    // AG GRID TOOLBAR BUTTON HANDLERS
+    // ============================================
+    
+    // Copy selected rows button
+    document.getElementById('copy-selected-btn').addEventListener('click', () => {
+        if (!gridApi) return;
+        
+        const selectedRows = gridApi.getSelectedRows();
+        if (selectedRows.length === 0) {
+            // If no selection, copy all visible rows
+            gridApi.selectAll();
+        }
+        
+        // Copy to clipboard
+        gridApi.copySelectedRowsToClipboard();
+        
+        // Show feedback
+        showNotification('Copied to clipboard', 'success');
+    });
+    
+    // Export CSV button
+    document.getElementById('export-csv-btn').addEventListener('click', () => {
+        if (!gridApi) return;
+        
+        gridApi.exportDataAsCsv({
+            fileName: `query-results-${Date.now()}.csv`,
+            columnSeparator: ','
+        });
+        
+        showNotification('CSV exported', 'success');
+    });
+    
+    // Clear filters button
+    document.getElementById('clear-filters-btn').addEventListener('click', () => {
+        if (!gridApi) return;
+        
+        gridApi.setFilterModel(null);
+        showNotification('Filters cleared', 'info');
+    });
+    
+    // Retry grid button
+    document.getElementById('retry-grid-btn').addEventListener('click', () => {
+        // Retry rendering with current data
+        const results = appState.currentQuery.results;
+        displayResultsWithAGGrid(results.columns, results.rows);
+    });
     
     // ============================================
     // MANUAL SQL EDITING EVENT HANDLERS
@@ -955,16 +1165,14 @@ document.addEventListener('DOMContentLoaded', () => {
         saveToSessionStorage();
     });
     
-    // Execute button - dual purpose (generate or execute)
+    // Trigger initial validation if there's SQL in the editor
+    if (appState.sql.query || sqlEditor.value) {
+        updateSQLValidation();
+    }
+    
+    // Execute button - always executes the SQL in the editor
     document.getElementById('execute-sql-btn').addEventListener('click', () => {
-        if (appState.sql.mode === 'manual' || appState.sql.isEdited) {
-            executeManualSQL();
-        } else {
-            // In auto mode with unedited SQL, just execute existing SQL
-            if (appState.sql.query) {
-                executeManualSQL();
-            }
-        }
+        executeManualSQL();
     });
     
     // Generate SQL button (auto mode)

@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SQL Chatbot</title>
+    
+    <!-- AG Grid CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-grid.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine.min.css">
+    
+    <!-- Application CSS -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -65,10 +71,53 @@
         </button>
     </div>
 
-    <!-- NEW: Results Tab Content -->
+    <!-- NEW: Results Tab Content with AG Grid -->
     <div id="results-tab" class="tab-content active">
-        <h2>Results:</h2>
-        <div id="results-output"></div>
+        <div class="results-header">
+            <h2>Results: <span id="results-row-count">0 rows</span></h2>
+            <div class="results-toolbar">
+                <button id="copy-selected-btn" class="toolbar-btn" title="Copy selected rows">
+                    📋 Copy
+                </button>
+                <button id="export-csv-btn" class="toolbar-btn" title="Export to CSV">
+                    📥 Export CSV
+                </button>
+                <button id="clear-filters-btn" class="toolbar-btn" title="Clear all filters" style="display: none;">
+                    🔍 Clear Filters
+                </button>
+            </div>
+        </div>
+        
+        <!-- AG Grid Container -->
+        <div id="results-grid" class="ag-theme-alpine" style="height: 600px; width: 100%;"></div>
+        
+        <!-- Status Bar -->
+        <div id="results-status-bar" class="status-bar">
+            <span id="status-rows">Rows 0-0 of 0</span>
+            <span id="status-filters" style="display: none;">🔍 Filters active</span>
+            <span id="status-sort" style="display: none;">↕️ Sorted</span>
+        </div>
+        
+        <!-- Loading State -->
+        <div id="results-loading" class="loading-state" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading data grid...</p>
+        </div>
+        
+        <!-- Empty State -->
+        <div id="results-empty" class="empty-state" style="display: none;">
+            <div class="empty-icon">📊</div>
+            <h3>No Results</h3>
+            <p>Query returned no data.</p>
+        </div>
+        
+        <!-- Error State -->
+        <div id="results-error" class="error-state" style="display: none;">
+            <div class="error-icon">⚠️</div>
+            <h3>Error Loading Data</h3>
+            <p id="error-message">Unable to render table.</p>
+            <button id="retry-grid-btn" class="retry-btn">Retry</button>
+        </div>
     </div>
 
     <!-- NEW: Analysis Tab Content -->
@@ -162,6 +211,10 @@
         <div id="chart-error" class="chart-error" role="alert" aria-live="assertive" style="display: none;"></div>
     </div>
 
+    <!-- AG Grid JS (must load before app.js) -->
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/dist/ag-grid-community.min.js"></script>
+    
+    <!-- Application JS -->
     <script src="app.js"></script>
 </body>
 </html>
