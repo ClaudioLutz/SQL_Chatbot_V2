@@ -235,3 +235,4 @@ local_settings.py
 .env
 test_openai_api_key.py
 __pycache__/
+WINDOWS_AUTH_SETUP.md

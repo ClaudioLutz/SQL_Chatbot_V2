@@ -869,8 +869,17 @@ function displayResultsWithAGGrid(columns, rows) {
 }
 
 function createColumnDefs(columns, rows) {
-    return columns.map(col => {
+    // Debug: Log columns and first row
+    console.log('Creating column defs for columns:', columns);
+    if (rows.length > 0) {
+        console.log('First row data:', rows[0]);
+        console.log('First row keys:', Object.keys(rows[0]));
+    }
+    
+    return columns.map((col, index) => {
         const columnType = detectColumnType(col, rows);
+        
+        console.log(`Column ${index}: "${col}" - Type: ${columnType}`);
         
         const colDef = {
             field: col,
@@ -881,17 +890,29 @@ function createColumnDefs(columns, rows) {
             minWidth: 100,
             flex: 1,
             
-            // NULL value handling
+            // Simplified valueGetter for debugging
             valueGetter: params => {
+                if (!params.data) {
+                    console.warn(`No data for column ${col}`);
+                    return null;
+                }
                 const value = params.data[col];
-                return value === null || value === undefined ? null : value;
+                console.log(`Getting value for "${col}": ${typeof value} = ${value}`);
+                return value;
             },
             
+            // NULL value handling with cellRenderer
             cellRenderer: params => {
-                if (params.value === null || params.value === undefined) {
+                const value = params.value;
+                console.log(`Rendering cell for "${col}": ${typeof value} = ${value}`);
+                if (value === null || value === undefined) {
                     return '<span class="null-value">NULL</span>';
                 }
-                return params.value;
+                // Handle different value types
+                if (typeof value === 'string') {
+                    return value || '<span class="null-value">NULL</span>';
+                }
+                return String(value);
             }
         };
         

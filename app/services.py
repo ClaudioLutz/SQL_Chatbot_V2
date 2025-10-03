@@ -119,11 +119,31 @@ def execute_sql_query(sql_query: str) -> dict:
         with pyodbc.connect(DB_CONNECTION_STRING) as cnxn:
             cursor = cnxn.cursor()
             cursor.execute(sql_query)
+            
+            # Get column names from cursor description
             columns = [column[0] for column in cursor.description]
+            
+            # Fetch all rows and convert to dictionaries
             for row in cursor.fetchall():
-                results.append(dict(zip(columns, row)))
+                # Create dictionary ensuring all values are properly mapped
+                row_dict = {}
+                for i, col_name in enumerate(columns):
+                    try:
+                        row_dict[col_name] = row[i]
+                    except IndexError:
+                        # Handle case where row has fewer columns than expected
+                        row_dict[col_name] = None
+                        logger.warning(f"Column {col_name} missing from row, setting to None")
+                results.append(row_dict)
+            
+            # Debug logging for first row to verify data structure
+            if results and len(results) > 0:
+                logger.info(f"First row keys: {list(results[0].keys())}")
+                logger.info(f"First row sample: {dict(list(results[0].items())[:3])}")
+                
     except Exception as e:
         print(f"Database query failed: {e}")
+        logger.error(f"Database query failed: {e}", exc_info=True)
         return {"error": str(e)}
 
     return {"columns": columns, "rows": results}
