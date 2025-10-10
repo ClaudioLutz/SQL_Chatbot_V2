@@ -147,9 +147,6 @@ async function fetchAnalysis() {
         if (data.status === 'success') {
             updateAnalysisState('success', data);
             renderAnalysis(data);
-        } else if (data.status === 'too_large') {
-            updateAnalysisState('too_large', null, data.message);
-            displayAnalysisMessage('too_large', data.message);
         } else if (data.status === 'insufficient_rows') {
             updateAnalysisState('insufficient_rows', null, data.message);
             displayAnalysisMessage('insufficient_rows', data.message);
@@ -185,12 +182,11 @@ function displayAnalysisMessage(type, message = null) {
     
     const messages = {
         'insufficient_rows': 'Analysis requires at least 2 rows of data.',
-        'too_large': message || 'Analysis unavailable for datasets exceeding 50,000 rows. Please refine your query for detailed statistics.',
         'error': message || 'Analysis could not be generated for this dataset.'
     };
     
     errorDiv.textContent = messages[type] || message;
-    errorDiv.className = type === 'too_large' ? 'error-message info' : 'error-message';
+    errorDiv.className = 'error-message';
 }
 
 // Analysis rendering functions
@@ -1281,6 +1277,9 @@ function initializeVisualizationListeners() {
     // Axis selector listeners
     document.getElementById('x-axis-select').addEventListener('change', handleAxisSelection);
     document.getElementById('y-axis-select').addEventListener('change', handleAxisSelection);
+    
+    // Sample size input listener
+    document.getElementById('sample-size-input').addEventListener('change', handleSampleSizeChange);
 }
 
 async function initializeVisualizationTab() {
@@ -1511,9 +1510,24 @@ function handleAxisSelection() {
     }
 }
 
+function handleSampleSizeChange() {
+    clearTimeout(chartGenerationTimeout);
+    
+    // Only regenerate if we already have a chart
+    if (appState.visualization.chartData) {
+        chartGenerationTimeout = setTimeout(() => {
+            generateChart();
+        }, 500); // Longer delay for sample size changes
+    }
+}
+
 async function generateChart() {
     const {chartType, xColumn, yColumn} = appState.visualization;
     const results = appState.currentQuery.results;
+    
+    // Get custom sample size from input
+    const sampleSizeInput = document.getElementById('sample-size-input');
+    const maxRows = parseInt(sampleSizeInput.value) || 10000;
     
     appState.visualization.status = 'loading';
     
@@ -1526,8 +1540,9 @@ async function generateChart() {
     try {
         let chartData;
         
-        if (results.rows.length > 10000) {
+        if (results.rows.length > maxRows) {
             // Large dataset: use backend
+            console.log(`Sending visualization request with maxRows=${maxRows}`);
             const response = await fetch('/api/visualize', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1536,7 +1551,8 @@ async function generateChart() {
                     rows: results.rows,
                     chartType,
                     xColumn,
-                    yColumn
+                    yColumn,
+                    maxRows
                 })
             });
             

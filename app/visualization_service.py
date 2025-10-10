@@ -25,6 +25,7 @@ class VisualizationRequest(BaseModel):
     chartType: ChartType
     xColumn: str
     yColumn: Optional[str] = None  # None for histogram
+    maxRows: Optional[int] = 10000  # Maximum rows to sample
 
 
 class CheckVisualizationRequest(BaseModel):

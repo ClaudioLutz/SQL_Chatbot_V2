@@ -392,7 +392,7 @@ Generate SQL from natural language and execute against database.
 
 #### POST /api/analyze
 
-Generate statistical analysis for query results using DuckDB.
+Generate statistical analysis for query results using DuckDB. **Handles unlimited dataset sizes** - can analyze millions of rows efficiently.
 
 **Request:**
 ```json
@@ -409,7 +409,7 @@ Generate statistical analysis for query results using DuckDB.
 ```json
 {
   "status": "success",
-  "row_count": 150,
+  "row_count": 999659,
   "column_count": 3,
   "variable_types": {
     "numeric": 2,
@@ -420,7 +420,7 @@ Generate statistical analysis for query results using DuckDB.
   "numeric_stats": [
     {
       "column": "ProductID",
-      "count": 150,
+      "count": 999659,
       "mean": 75.5,
       "std": 43.3,
       "min": 1,
@@ -431,25 +431,15 @@ Generate statistical analysis for query results using DuckDB.
     }
   ],
   "cardinality": [
-    {"column": "ProductID", "unique_count": 150, "total_count": 150},
-    {"column": "Name", "unique_count": 150, "total_count": 150},
-    {"column": "ListPrice", "unique_count": 45, "total_count": 150}
+    {"column": "ProductID", "unique_count": 150, "total_count": 999659},
+    {"column": "Name", "unique_count": 150, "total_count": 999659},
+    {"column": "ListPrice", "unique_count": 45, "total_count": 999659}
   ],
   "missing_values": [
     {"column": "ProductID", "null_count": 0, "null_percentage": 0.0},
     {"column": "Name", "null_count": 0, "null_percentage": 0.0},
-    {"column": "ListPrice", "null_count": 5, "null_percentage": 3.33}
+    {"column": "ListPrice", "null_count": 5, "null_percentage": 0.0005}
   ]
-}
-```
-
-**Response (Too Large):**
-```json
-{
-  "status": "too_large",
-  "row_count": 75000,
-  "column_count": 5,
-  "message": "Analysis unavailable for datasets exceeding 50,000 rows. Please refine your query for detailed statistics."
 }
 ```
 
@@ -460,6 +450,56 @@ Generate statistical analysis for query results using DuckDB.
   "row_count": 1,
   "column_count": 3,
   "message": "Analysis requires at least 2 rows of data."
+}
+```
+
+#### POST /api/visualize
+
+Prepare visualization data with customizable sampling for large datasets. **Sample size is user-configurable** from 100 to 100,000 rows.
+
+**Request:**
+```json
+{
+  "columns": ["ProductID", "Name", "ListPrice"],
+  "rows": [...],
+  "chartType": "histogram",
+  "xColumn": "ListPrice",
+  "yColumn": null,
+  "maxRows": 100000
+}
+```
+
+**Response (Success - Sampled):**
+```json
+{
+  "status": "success",
+  "data": {
+    "columns": ["ListPrice"],
+    "rows": [...]
+  },
+  "is_sampled": true,
+  "original_row_count": 999659,
+  "sampled_row_count": 100000,
+  "column_types": {
+    "ListPrice": "numeric"
+  }
+}
+```
+
+**Response (Success - No Sampling Needed):**
+```json
+{
+  "status": "success",
+  "data": {
+    "columns": ["ListPrice"],
+    "rows": [...]
+  },
+  "is_sampled": false,
+  "original_row_count": 5000,
+  "sampled_row_count": null,
+  "column_types": {
+    "ListPrice": "numeric"
+  }
 }
 ```
 

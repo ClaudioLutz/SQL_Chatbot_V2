@@ -219,6 +219,7 @@ async def visualize_data(request: visualization_service.VisualizationRequest):
         chartType: Type of chart (scatter, bar, line, histogram)
         xColumn: Name of X-axis column
         yColumn: Name of Y-axis column (optional for histogram)
+        maxRows: Maximum rows to sample (optional, defaults to 10000)
         
     Returns:
         Prepared data with sampling info and column types
@@ -227,21 +228,20 @@ async def visualize_data(request: visualization_service.VisualizationRequest):
         # Convert to DataFrame
         df = pd.DataFrame(request.rows)
         
-        # Check row limit (consistent with analysis feature)
-        if len(df) > 50000:
-            return {
-                "status": "too_large",
-                "row_count": len(df),
-                "message": "Dataset exceeds 50,000 rows. Please refine your query."
-            }
+        # Get max_rows from request (Pydantic model field)
+        max_rows = request.maxRows if request.maxRows is not None else 10000
+        
+        # Debug logging
+        logger.info(f"Visualization request: maxRows={request.maxRows}, using max_rows={max_rows}, dataset_size={len(df)}")
         
         # Prepare visualization data (with sampling if needed)
+        # Note: Large datasets will be automatically sampled to max_rows for performance
         result = visualization_service.prepare_visualization_data(
             df=df,
             chart_type=request.chartType,
             x_column=request.xColumn,
             y_column=request.yColumn,
-            max_rows=10000
+            max_rows=max_rows
         )
         
         return result

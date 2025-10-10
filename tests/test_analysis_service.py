@@ -39,15 +39,17 @@ class TestAnalyzeQueryResults:
         assert result["row_count"] == 10
         assert result["column_count"] == 3
     
-    def test_row_limit_exceeded(self):
-        """Test rejection of datasets > 50K rows."""
+    def test_large_dataset_over_50k(self):
+        """Test analysis with datasets > 50K rows (now supported)."""
         result = analyze_query_results(
             columns=TOO_LARGE_DATASET["columns"],
             rows=TOO_LARGE_DATASET["rows"]
         )
-        assert result["status"] == "too_large"
-        assert "50,000 rows" in result["message"]
+        assert result["status"] == "success"
         assert result["row_count"] == 60000
+        assert result["column_count"] == 1
+        assert "variable_types" in result
+        assert "numeric_stats" in result
     
     def test_empty_dataset(self):
         """Test handling of empty dataset."""
@@ -149,14 +151,14 @@ class TestValidation:
         assert is_valid is False
         assert error == "insufficient_rows"
     
-    def test_too_many_rows(self):
-        """Test validation fails for > 50K rows."""
+    def test_large_row_count(self):
+        """Test validation passes for > 50K rows (now unlimited)."""
         is_valid, error = _validate_dataset_requirements(
             columns=["A"],
             rows=[{"A": i} for i in range(60000)]
         )
-        assert is_valid is False
-        assert error == "too_large"
+        assert is_valid is True
+        assert error is None
 
 
 class TestDataExtraction:

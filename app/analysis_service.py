@@ -9,7 +9,6 @@ from skimpy import skim
 logger = logging.getLogger(__name__)
 
 # Constants
-MAX_ROWS = 50000
 MIN_ROWS = 2
 MIN_COLUMNS = 1
 
@@ -80,9 +79,6 @@ def _validate_dataset_requirements(
     if len(rows) < MIN_ROWS:
         return False, "insufficient_rows"
     
-    if len(rows) > MAX_ROWS:
-        return False, "too_large"
-    
     return True, None
 
 
@@ -94,8 +90,7 @@ def _create_error_response(
     """Create appropriate error response based on error code."""
     messages = {
         "no_columns": "No columns to analyze.",
-        "insufficient_rows": "Analysis requires at least 2 rows of data.",
-        "too_large": "Analysis unavailable for datasets exceeding 50,000 rows. Please refine your query for detailed statistics."
+        "insufficient_rows": "Analysis requires at least 2 rows of data."
     }
     
     response = {

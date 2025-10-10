@@ -882,6 +882,27 @@ th {
     }
 }
 
+/* Sample Size Input */
+.sample-size-input {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 100%;
+}
+
+.sample-size-input:focus {
+    outline: 2px solid #0066CC;
+    border-color: #0066CC;
+}
+
+.sample-size-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #666;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .stats-grid {
