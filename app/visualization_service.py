@@ -26,6 +26,7 @@ class VisualizationRequest(BaseModel):
     xColumn: str
     yColumn: Optional[str] = None  # None for histogram
     maxRows: Optional[int] = 10000  # Maximum rows to sample
+    bins: Optional[int] = None  # Number of bins for histogram (None = auto)
 
 
 class CheckVisualizationRequest(BaseModel):
@@ -39,7 +40,8 @@ CHART_COMPATIBILITY = {
     "scatter": {"x": ["numeric"], "y": ["numeric"]},
     "bar": {"x": ["categorical"], "y": ["numeric"]},
     "line": {"x": ["datetime", "numeric"], "y": ["numeric"]},
-    "histogram": {"x": ["numeric"]}
+    "histogram": {"x": ["numeric"]},
+    "correlation": {"columns": ["numeric"]}  # Multi-select numeric only
 }
 
 
@@ -309,4 +311,134 @@ def prepare_visualization_data(
         "original_row_count": original_count,
         "sampled_row_count": len(df_sampled) if sample_result["sampled"] else None,
         "column_types": column_types
+    }
+
+
+def validate_correlation_request(
+    df: pd.DataFrame,
+    columns: List[str]
+) -> Dict[str, bool | str]:
+    """
+    Validate correlation matrix request.
+    
+    Args:
+        df: Input DataFrame
+        columns: List of column names to correlate
+    
+    Returns:
+        Dictionary with validation result and error message if invalid
+    """
+    # Check minimum columns
+    if len(columns) < 2:
+        return {
+            "valid": False,
+            "message": "At least 2 columns required for correlation matrix."
+        }
+    
+    # Check maximum columns
+    if len(columns) > 15:
+        return {
+            "valid": False,
+            "message": "Maximum 15 columns allowed for correlation matrix."
+        }
+    
+    # Check columns exist
+    missing_columns = [col for col in columns if col not in df.columns]
+    if missing_columns:
+        return {
+            "valid": False,
+            "message": f"Columns not found: {', '.join(missing_columns)}"
+        }
+    
+    # Check all columns are numeric
+    non_numeric = []
+    for col in columns:
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            non_numeric.append(col)
+    
+    if non_numeric:
+        return {
+            "valid": False,
+            "message": f"Non-numeric columns: {', '.join(non_numeric)}. "
+                      f"Correlation matrix requires numeric columns only."
+        }
+    
+    return {"valid": True}
+
+
+def calculate_correlation_matrix(
+    df: pd.DataFrame,
+    columns: List[str],
+    max_rows: int = 10000
+) -> dict:
+    """
+    Calculate Pearson correlation matrix for selected numeric columns.
+    
+    Args:
+        df: Input DataFrame
+        columns: List of column names to correlate (2-15)
+        max_rows: Maximum rows before sampling (default 10000)
+    
+    Returns:
+        Dictionary with:
+        - status: "success" | "error"
+        - correlation_matrix: Dict[str, Dict[str, float]]
+        - columns: List[str]
+        - is_sampled: bool
+        - sample_size: int
+        - original_size: int
+        - rows_with_missing_data: int
+    
+    Raises:
+        ValueError: For validation errors or insufficient data
+    """
+    original_count = len(df)
+    
+    # Sample if needed
+    if original_count > max_rows:
+        sample_result = sample_large_dataset(df, columns[0], max_rows)
+        df_sampled = sample_result["data"]
+        is_sampled = True
+    else:
+        df_sampled = df
+        is_sampled = False
+    
+    # Filter to selected columns and ensure numeric
+    df_filtered = df_sampled[columns].select_dtypes(include=[np.number])
+    
+    # Validate all columns are numeric
+    if len(df_filtered.columns) != len(columns):
+        non_numeric = set(columns) - set(df_filtered.columns)
+        raise ValueError(
+            f"Non-numeric columns detected: {', '.join(non_numeric)}. "
+            f"Correlation matrix requires numeric columns only."
+        )
+    
+    # Drop rows with any NaN
+    df_clean = df_filtered.dropna()
+    
+    if len(df_clean) < 2:
+        raise ValueError(
+            "Insufficient data after removing missing values. "
+            "At least 2 complete rows required."
+        )
+    
+    # Calculate correlation matrix
+    corr_matrix = df_clean.corr()
+    
+    # Convert to nested dict
+    corr_dict = {}
+    for col1 in columns:
+        corr_dict[col1] = {}
+        for col2 in columns:
+            corr_dict[col1][col2] = float(corr_matrix.loc[col1, col2])
+    
+    return {
+        "status": "success",
+        "correlation_matrix": corr_dict,
+        "columns": columns,
+        "is_sampled": is_sampled,
+        "sample_size": len(df_clean),
+        "original_size": original_count,
+        "rows_with_missing_data": original_count - len(df_clean)
     }

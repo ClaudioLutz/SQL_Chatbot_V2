@@ -39,7 +39,13 @@ const appState = {
         chartData: null,
         isSampled: false,
         originalRowCount: null,
-        sampledRowCount: null
+        sampledRowCount: null,
+        // Correlation matrix specific
+        selectedColumns: [],           // Array of selected column names
+        correlationMatrix: null,        // Cached correlation data
+        correlationStatus: 'idle',      // idle | loading | success | error
+        correlationError: null,         // Error message if any
+        maxRows: 10000                  // Sampling threshold
     },
     ui: {
         activeTab: "results"
@@ -1269,6 +1275,18 @@ function initializeVisualizationListeners() {
         });
     });
     
+    // Back to chart selector buttons
+    const backButton = document.getElementById('back-to-chart-selector-btn');
+    const backButtonFromAxis = document.getElementById('back-to-chart-selector-from-axis-btn');
+    
+    if (backButton) {
+        backButton.addEventListener('click', returnToChartSelector);
+    }
+    
+    if (backButtonFromAxis) {
+        backButtonFromAxis.addEventListener('click', returnToChartSelector);
+    }
+    
     // Chart type dropdown listener
     document.getElementById('chart-type-select').addEventListener('change', (e) => {
         handleChartTypeChange(e.target.value);
@@ -1383,6 +1401,12 @@ function handleChartTypeSelection(chartType) {
     appState.visualization.xColumn = null;
     appState.visualization.yColumn = null;
     
+    // Hide correlation-specific UI if switching away from correlation
+    const correlationWrapper = document.getElementById('correlation-columns-wrapper');
+    if (correlationWrapper) {
+        correlationWrapper.style.display = 'none';
+    }
+    
     // Hide chart type selector, show axis config
     document.getElementById('chart-type-selector').style.display = 'none';
     document.getElementById('axis-config').style.display = 'flex';
@@ -1441,6 +1465,14 @@ function updateAxisLabelsForChartType(chartType) {
         document.getElementById('y-axis-label').textContent = labels[chartType].y;
     } else {
         yWrapper.style.display = 'none';
+    }
+    
+    // Show/hide bins input for histogram
+    const binsWrapper = document.getElementById('bins-wrapper');
+    if (chartType === 'histogram') {
+        binsWrapper.style.display = 'block';
+    } else {
+        binsWrapper.style.display = 'none';
     }
 }
 
@@ -1529,6 +1561,10 @@ async function generateChart() {
     const sampleSizeInput = document.getElementById('sample-size-input');
     const maxRows = parseInt(sampleSizeInput.value) || 10000;
     
+    // Get bins parameter for histogram
+    const binsInput = document.getElementById('bins-input');
+    const bins = chartType === 'histogram' && binsInput && binsInput.value ? parseInt(binsInput.value) : null;
+    
     appState.visualization.status = 'loading';
     
     // Show loading
@@ -1542,18 +1578,25 @@ async function generateChart() {
         
         if (results.rows.length > maxRows) {
             // Large dataset: use backend
-            console.log(`Sending visualization request with maxRows=${maxRows}`);
+            console.log(`Sending visualization request with maxRows=${maxRows}, bins=${bins}`);
+            const requestBody = {
+                columns: results.columns,
+                rows: results.rows,
+                chartType,
+                xColumn,
+                yColumn,
+                maxRows
+            };
+            
+            // Add bins parameter if applicable
+            if (bins !== null && chartType === 'histogram') {
+                requestBody.bins = bins;
+            }
+            
             const response = await fetch('/api/visualize', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    columns: results.columns,
-                    rows: results.rows,
-                    chartType,
-                    xColumn,
-                    yColumn,
-                    maxRows
-                })
+                body: JSON.stringify(requestBody)
             });
             
             const result = await response.json();
@@ -1577,7 +1620,8 @@ async function generateChart() {
                 rows: result.data.rows,
                 chartType,
                 xColumn,
-                yColumn
+                yColumn,
+                bins
             });
         } else {
             // Small dataset: process client-side
@@ -1585,7 +1629,8 @@ async function generateChart() {
                 rows: results.rows,
                 chartType,
                 xColumn,
-                yColumn
+                yColumn,
+                bins
             });
         }
         
@@ -1603,7 +1648,7 @@ async function generateChart() {
     }
 }
 
-function prepareChartDataClientSide({rows, chartType, xColumn, yColumn}) {
+function prepareChartDataClientSide({rows, chartType, xColumn, yColumn, bins}) {
     const plotlyData = [];
     const layout = {
         autosize: true,
@@ -1651,11 +1696,18 @@ function prepareChartDataClientSide({rows, chartType, xColumn, yColumn}) {
             break;
             
         case 'histogram':
-            plotlyData.push({
+            const histogramTrace = {
                 x: rows.map(r => r[xColumn]),
                 type: 'histogram',
                 marker: {color: '#0066CC'}
-            });
+            };
+            
+            // Add bins parameter if specified
+            if (bins !== null && bins !== undefined && bins > 0) {
+                histogramTrace.nbinsx = bins;
+            }
+            
+            plotlyData.push(histogramTrace);
             layout.title = `Distribution of ${xColumn}`;
             layout.xaxis = {title: xColumn};
             layout.yaxis = {title: 'Frequency'};
@@ -1700,3 +1752,439 @@ function showVisualizationUnavailable(reason) {
     document.querySelector('#viz-unavailable .reason').textContent = reason;
     document.getElementById('chart-type-selector').style.display = 'none';
 }
+
+function returnToChartSelector() {
+    // Hide all configuration UIs
+    document.getElementById('correlation-columns-wrapper').style.display = 'none';
+    document.getElementById('axis-config').style.display = 'none';
+    document.getElementById('chart-container').style.display = 'none';
+    document.getElementById('chart-error').style.display = 'none';
+    document.getElementById('sampling-notice').style.display = 'none';
+    
+    // Clear the chart
+    cleanupChart();
+    
+    // Reset visualization state (but keep column types and availability)
+    appState.visualization.chartType = null;
+    appState.visualization.xColumn = null;
+    appState.visualization.yColumn = null;
+    appState.visualization.chartData = null;
+    appState.visualization.selectedColumns = [];
+    appState.visualization.correlationMatrix = null;
+    appState.visualization.isSampled = false;
+    
+    // Show chart type selector
+    document.getElementById('chart-type-selector').style.display = 'flex';
+}
+
+// ============================================
+// CORRELATION MATRIX LOGIC
+// ============================================
+
+// Initialize correlation matrix feature
+function initCorrelationMatrix() {
+    const button = document.querySelector('[data-chart="correlation"]');
+    if (button) {
+        button.addEventListener('click', handleCorrelationChartSelection);
+    }
+}
+
+// Handle correlation matrix chart type selection
+function handleCorrelationChartSelection() {
+    appState.visualization.chartType = 'correlation';
+    appState.visualization.selectedColumns = [];
+    appState.visualization.correlationMatrix = null;
+    
+    // Hide other chart configurations
+    document.getElementById('axis-config').style.display = 'none';
+    document.getElementById('chart-type-selector').style.display = 'none';
+    
+    // Show correlation column selector
+    showCorrelationColumnSelector();
+}
+
+// Show column selector with smart defaults
+function showCorrelationColumnSelector() {
+    const wrapper = document.getElementById('correlation-columns-wrapper');
+    const columnList = document.getElementById('correlation-column-list');
+    
+    // Clear existing
+    columnList.innerHTML = '';
+    
+    // Get numeric columns
+    const numericColumns = getNumericColumns();
+    
+    if (numericColumns.length < 2) {
+        showChartError('At least 2 numeric columns required for correlation matrix.');
+        return;
+    }
+    
+    // Pre-select first 5 columns (smart default)
+    const defaultSelection = numericColumns.slice(0, Math.min(5, numericColumns.length));
+    appState.visualization.selectedColumns = [...defaultSelection];
+    
+    // Create checkboxes
+    numericColumns.forEach(col => {
+        const label = document.createElement('label');
+        label.className = 'column-checkbox';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = col;
+        checkbox.checked = defaultSelection.includes(col);
+        checkbox.addEventListener('change', handleColumnChange);
+        
+        const span = document.createElement('span');
+        span.textContent = col;
+        
+        label.appendChild(checkbox);
+        label.appendChild(span);
+        columnList.appendChild(label);
+    });
+    
+    wrapper.style.display = 'block';
+    
+    // Update selection status
+    updateSelectionStatus();
+    
+    // Auto-generate if valid selection
+    if (defaultSelection.length >= 2) {
+        debouncedGenerateMatrix();
+    }
+}
+
+// Get numeric columns from current results
+function getNumericColumns() {
+    const columnTypes = appState.visualization.columnTypes;
+    return Object.keys(columnTypes).filter(col => 
+        columnTypes[col] === 'numeric'
+    );
+}
+
+// Handle column checkbox change - NO auto-generation
+function handleColumnChange(event) {
+    const column = event.target.value;
+    const isChecked = event.target.checked;
+    
+    if (isChecked) {
+        appState.visualization.selectedColumns.push(column);
+    } else {
+        appState.visualization.selectedColumns = 
+            appState.visualization.selectedColumns.filter(c => c !== column);
+    }
+    
+    // Update status message and button state
+    updateSelectionStatus();
+    updateGenerateButton();
+}
+
+// Update selection status message
+function updateSelectionStatus() {
+    const count = appState.visualization.selectedColumns.length;
+    const statusEl = document.getElementById('column-selection-status');
+    
+    if (count < 2) {
+        statusEl.textContent = `${count} column${count !== 1 ? 's' : ''} selected. Select at least 2 columns.`;
+        statusEl.setAttribute('aria-live', 'polite');
+    } else if (count > 10) {
+        statusEl.textContent = `${count} columns selected. Maximum 10 recommended for readability.`;
+        statusEl.setAttribute('aria-live', 'assertive');
+    } else {
+        statusEl.textContent = `${count} columns selected. Valid selection.`;
+        statusEl.setAttribute('aria-live', 'polite');
+    }
+}
+
+// Update generate button state
+function updateGenerateButton() {
+    const button = document.getElementById('generate-correlation-btn');
+    if (!button) return;
+    
+    const count = appState.visualization.selectedColumns.length;
+    
+    if (count >= 2 && count <= 15) {
+        button.disabled = false;
+    } else {
+        button.disabled = true;
+    }
+}
+
+// Generate correlation matrix
+async function generateCorrelationMatrix() {
+    const selectedColumns = appState.visualization.selectedColumns;
+    const results = appState.currentQuery.results;
+    
+    // Validation
+    if (selectedColumns.length < 2) {
+        showChartError('Please select at least 2 columns for correlation analysis.');
+        return;
+    }
+    
+    if (selectedColumns.length > 15) {
+        showChartError('Maximum 15 columns allowed for correlation matrix.');
+        return;
+    }
+    
+    // Update status
+    appState.visualization.correlationStatus = 'loading';
+    
+    // Show loading
+    showChartLoading('Calculating correlations...');
+    disableCorrelationControls();
+    
+    try {
+        let correlationData;
+        
+        // Choose calculation strategy
+        const rowCount = results.rows.length;
+        const colCount = selectedColumns.length;
+        
+        if (rowCount <= 10000 && colCount <= 5) {
+            // Client-side calculation
+            correlationData = calculateCorrelationClientSide(
+                results.rows,
+                selectedColumns
+            );
+        } else {
+            // Backend calculation
+            const maxRows = document.getElementById('max-rows-input').value || 10000;
+            
+            const response = await fetch('/api/correlation-matrix', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    columns: selectedColumns,
+                    rows: results.rows,
+                    maxRows: parseInt(maxRows)
+                })
+            });
+            
+            correlationData = await response.json();
+            
+            if (correlationData.status !== 'success') {
+                throw new Error(correlationData.message || 'Failed to calculate correlation matrix');
+            }
+            
+            // Show sampling notice if applicable
+            if (correlationData.is_sampled) {
+                showCorrelationSamplingNotice(
+                    correlationData.original_size,
+                    correlationData.sample_size
+                );
+            }
+        }
+        
+        // Render the heatmap
+        renderCorrelationMatrix(
+            correlationData.correlation_matrix,
+            selectedColumns
+        );
+        
+        // Update state
+        appState.visualization.correlationStatus = 'success';
+        appState.visualization.correlationMatrix = correlationData;
+        
+        // Announce to screen readers
+        announceToScreenReader(
+            'Correlation matrix generated successfully. Interactive heatmap now displayed.'
+        );
+        
+    } catch (error) {
+        console.error('Correlation matrix error:', error);
+        appState.visualization.correlationStatus = 'error';
+        appState.visualization.correlationError = error.message;
+        showChartError(error.message);
+    } finally {
+        hideChartLoading();
+        enableCorrelationControls();
+    }
+}
+
+// Client-side Pearson correlation
+function calculateCorrelationClientSide(rows, columns) {
+    const matrix = {};
+    
+    columns.forEach(col1 => {
+        matrix[col1] = {};
+        columns.forEach(col2 => {
+            if (col1 === col2) {
+                matrix[col1][col2] = 1.0;
+            } else {
+                const x = rows.map(r => r[col1]).filter(v => v != null);
+                const y = rows.map(r => r[col2]).filter(v => v != null);
+                matrix[col1][col2] = pearsonCorrelation(x, y);
+            }
+        });
+    });
+    
+    return {
+        status: 'success',
+        correlation_matrix: matrix,
+        columns: columns,
+        is_sampled: false
+    };
+}
+
+// Pearson correlation coefficient
+function pearsonCorrelation(x, y) {
+    const n = Math.min(x.length, y.length);
+    if (n < 2) return 0;
+    
+    const sumX = x.reduce((a, b) => a + b, 0);
+    const sumY = y.reduce((a, b) => a + b, 0);
+    const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+    const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
+    const sumY2 = y.reduce((sum, yi) => sum + yi * yi, 0);
+    
+    const numerator = n * sumXY - sumX * sumY;
+    const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+    
+    if (denominator === 0) return 0;
+    return numerator / denominator;
+}
+
+// Render correlation matrix with Plotly
+function renderCorrelationMatrix(correlationData, columns) {
+    cleanupChart();
+    
+    // Build Z-matrix
+    const zData = columns.map(col1 => 
+        columns.map(col2 => correlationData[col1][col2])
+    );
+    
+    // Create annotations
+    const annotations = [];
+    for (let i = 0; i < columns.length; i++) {
+        for (let j = 0; j < columns.length; j++) {
+            const value = correlationData[columns[i]][columns[j]];
+            annotations.push({
+                x: columns[j],
+                y: columns[i],
+                text: value.toFixed(2),
+                showarrow: false,
+                font: {
+                    size: 12,
+                    color: Math.abs(value) > 0.5 ? 'white' : 'black'
+                }
+            });
+        }
+    }
+    
+    const data = [{
+        type: 'heatmap',
+        z: zData,
+        x: columns,
+        y: columns,
+        colorscale: 'RdBu',
+        reversescale: true,
+        zmid: 0,
+        zmin: -1,
+        zmax: 1,
+        colorbar: {
+            title: {
+                text: 'Correlation<br>Coefficient',
+                side: 'right'
+            },
+            tickmode: 'linear',
+            tick0: -1,
+            dtick: 0.5,
+            len: 0.7,
+            y: 0.5,
+            yanchor: 'middle'
+        },
+        hovertemplate: 
+            '<b>%{y}</b> vs <b>%{x}</b><br>' +
+            'Correlation: %{z:.3f}<br>' +
+            '<extra></extra>'
+    }];
+    
+    const layout = {
+        title: {
+            text: 'Correlation Matrix',
+            font: { size: 18 },
+            y: 0.98
+        },
+        xaxis: {
+            side: 'bottom',
+            tickangle: -45,
+            automargin: true
+        },
+        yaxis: {
+            side: 'left',
+            automargin: true
+        },
+        annotations: annotations,
+        autosize: false,
+        width: 800,
+        height: 800,
+        margin: { l: 150, r: 150, t: 80, b: 150 }
+    };
+    
+    const config = {
+        responsive: true,
+        displayModeBar: true,
+        modeBarButtonsToRemove: ['pan2d', 'lasso2d'],
+        displaylogo: false
+    };
+    
+    const container = document.getElementById('chart-container');
+    container.style.display = 'block';
+    
+    Plotly.newPlot(container, data, layout, config);
+}
+
+// Helper functions
+function showChartLoading(message) {
+    const loadingDiv = document.getElementById('chart-loading');
+    loadingDiv.textContent = message || 'Loading...';
+    loadingDiv.style.display = 'block';
+}
+
+function hideChartLoading() {
+    document.getElementById('chart-loading').style.display = 'none';
+}
+
+function disableCorrelationControls() {
+    document.querySelectorAll('.column-checkbox input').forEach(cb => {
+        cb.disabled = true;
+    });
+}
+
+function enableCorrelationControls() {
+    document.querySelectorAll('.column-checkbox input').forEach(cb => {
+        cb.disabled = false;
+    });
+}
+
+function showCorrelationSamplingNotice(originalSize, sampleSize) {
+    const notice = document.getElementById('sampling-notice');
+    if (!notice) {
+        console.error('Sampling notice element not found');
+        return;
+    }
+    notice.textContent = `* Data sampled for performance. Displaying ${sampleSize.toLocaleString()} of ${originalSize.toLocaleString()} rows.`;
+    notice.style.display = 'block';
+}
+
+function announceToScreenReader(message) {
+    const announcer = document.getElementById('screen-reader-announcer');
+    if (announcer) {
+        announcer.textContent = message;
+        setTimeout(() => {
+            announcer.textContent = '';
+        }, 1000);
+    }
+}
+
+// Initialize correlation matrix on page load
+document.addEventListener('DOMContentLoaded', () => {
+    initCorrelationMatrix();
+    
+    // Add event listener for generate correlation button
+    const generateButton = document.getElementById('generate-correlation-btn');
+    if (generateButton) {
+        generateButton.addEventListener('click', () => {
+            generateCorrelationMatrix();
+        });
+    }
+});

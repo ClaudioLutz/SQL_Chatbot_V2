@@ -362,11 +362,14 @@ th {
 .chart-container {
     width: 100%;
     min-height: 400px;
-    margin: 20px 0;
+    margin: 20px auto;
     border: 1px solid #ddd;
     border-radius: 8px;
     background: white;
-    padding: 10px;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 /* Sampling Notice */
@@ -401,6 +404,154 @@ th {
 .viz-unavailable .reason {
     color: #999;
     font-style: italic;
+}
+
+/* ============================================
+   CORRELATION MATRIX STYLES
+   ============================================ */
+
+/* Correlation column selector wrapper */
+.correlation-columns-wrapper {
+    margin: 20px 0;
+    padding: 16px;
+    background: #fafafa;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+}
+
+.correlation-columns-wrapper label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    font-size: 14px;
+    color: #333;
+}
+
+/* Column checkbox list */
+.column-checkbox-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 12px 0;
+    padding: 12px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.column-checkbox {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+    min-height: 44px;
+}
+
+.column-checkbox:hover {
+    background: #f5f5f5;
+}
+
+.column-checkbox input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    cursor: pointer;
+    accent-color: #0066CC;
+}
+
+.column-checkbox input[type="checkbox"]:focus {
+    outline: 2px solid #0066CC;
+    outline-offset: 2px;
+}
+
+.column-checkbox span {
+    font-size: 14px;
+    color: #333;
+    user-select: none;
+}
+
+.column-checkbox input[type="checkbox"]:checked + span {
+    font-weight: 500;
+    color: #0066CC;
+}
+
+.helper-text {
+    display: block;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #757575;
+    font-style: italic;
+}
+
+#column-selection-status {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #666;
+}
+
+/* Sampling configuration */
+.sampling-config {
+    margin-top: 12px;
+    padding: 8px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+}
+
+.sampling-config summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: #0066CC;
+    padding: 4px;
+}
+
+.sampling-config summary:hover {
+    color: #004499;
+}
+
+.sampling-controls {
+    margin-top: 12px;
+    padding: 8px;
+}
+
+.sampling-controls label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+}
+
+.sampling-controls input[type="number"] {
+    width: 150px;
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.sampling-controls .help-text {
+    display: block;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #666;
+    line-height: 1.4;
+}
+
+/* Screen reader only */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
 }
 
 /* ============================================

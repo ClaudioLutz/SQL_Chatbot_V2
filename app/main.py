@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
 import logging
 import pandas as pd
 import time
@@ -260,6 +260,92 @@ async def visualize_data(request: visualization_service.VisualizationRequest):
         return {
             "status": "error",
             "message": "Failed to generate visualization data. Please try again.",
+            "error_type": "server"
+        }
+
+
+class CorrelationMatrixRequest(BaseModel):
+    columns: List[str] = Field(..., min_length=2, max_length=15)
+    rows: List[Dict[str, Any]]
+    maxRows: Optional[int] = Field(10000, ge=100)
+
+
+@app.post("/api/correlation-matrix")
+async def correlation_matrix_endpoint(request: CorrelationMatrixRequest):
+    """
+    Calculate correlation matrix for selected numeric columns.
+    
+    NO ROW LIMITS - Users can process datasets of ANY size.
+    Sampling is RECOMMENDED for performance, not required.
+    
+    Request body:
+        columns: List[str] - Column names (2-15)
+        rows: List[dict] - Query result data
+        maxRows: Optional[int] - Max rows before sampling (default 10000)
+    
+    Response:
+        - status: "success" | "error" | "warning"
+        - correlation_matrix: Dict[str, Dict[str, float]]
+        - columns: List[str]
+        - is_sampled: bool
+        - sample_size: int
+        - original_size: int
+        - rows_with_missing_data: int
+        - processing_time: float
+        - warning: Optional[str]
+    """
+    start_time = time.time()
+    
+    try:
+        # Convert to DataFrame
+        df = pd.DataFrame(request.rows)
+        
+        # Validate request
+        validation = visualization_service.validate_correlation_request(df, request.columns)
+        if not validation["valid"]:
+            return {
+                "status": "error",
+                "message": validation["message"]
+            }
+        
+        # Warn for large datasets without sampling
+        warning = None
+        if len(df) > 100000 and (request.maxRows is None or request.maxRows >= len(df)):
+            warning = (
+                f"Processing {len(df):,} rows without sampling. "
+                f"This may take 10-30 seconds. Consider setting maxRows "
+                f"to 10000-100000 for faster results."
+            )
+            logger.info(f"Large dataset correlation: {len(df)} rows, {len(request.columns)} columns")
+        
+        # Calculate correlation matrix
+        result = visualization_service.calculate_correlation_matrix(
+            df=df,
+            columns=request.columns,
+            max_rows=request.maxRows if request.maxRows else len(df)
+        )
+        
+        # Add metadata
+        result["processing_time"] = round(time.time() - start_time, 2)
+        if warning:
+            result["warning"] = warning
+        
+        return result
+        
+    except ValueError as e:
+        # Validation errors
+        logger.warning(f"Correlation matrix validation error: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "error_type": "validation"
+        }
+    except Exception as e:
+        # Unexpected errors
+        logger.error(f"Correlation matrix error: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "message": "Failed to calculate correlation matrix. Please try again.",
             "error_type": "server"
         }
 
