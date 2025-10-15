@@ -368,12 +368,29 @@ function renderMissingValues(missingData) {
 }
 
 function formatNumber(value) {
+    // Handle null/undefined
     if (value === null || value === undefined) {
         return 'N/A';
     }
+    
+    // Check if value is actually a number
+    if (typeof value !== 'number') {
+        // Try to parse as number
+        const parsed = Number(value);
+        if (isNaN(parsed)) {
+            // Not a number - return original value as string (no truncation)
+            return String(value);
+        }
+        // Successfully parsed, use parsed value
+        value = parsed;
+    }
+    
+    // Now we know it's a number - format appropriately
     if (Number.isInteger(value)) {
         return value.toLocaleString();
     }
+    
+    // For floating point numbers, use toFixed
     return value.toFixed(2);
 }
 
@@ -871,17 +888,8 @@ function displayResultsWithAGGrid(columns, rows) {
 }
 
 function createColumnDefs(columns, rows) {
-    // Debug: Log columns and first row
-    console.log('Creating column defs for columns:', columns);
-    if (rows.length > 0) {
-        console.log('First row data:', rows[0]);
-        console.log('First row keys:', Object.keys(rows[0]));
-    }
-    
-    return columns.map((col, index) => {
+    return columns.map((col) => {
         const columnType = detectColumnType(col, rows);
-        
-        console.log(`Column ${index}: "${col}" - Type: ${columnType}`);
         
         const colDef = {
             field: col,
@@ -892,40 +900,45 @@ function createColumnDefs(columns, rows) {
             minWidth: 100,
             flex: 1,
             
-            // Simplified valueGetter for debugging
-            valueGetter: params => {
-                if (!params.data) {
-                    console.warn(`No data for column ${col}`);
-                    return null;
-                }
-                const value = params.data[col];
-                console.log(`Getting value for "${col}": ${typeof value} = ${value}`);
-                return value;
-            },
-            
-            // NULL value handling with cellRenderer
+            // Safe cell renderer that handles all value types
             cellRenderer: params => {
                 const value = params.value;
-                console.log(`Rendering cell for "${col}": ${typeof value} = ${value}`);
+                
+                // Handle null/undefined
                 if (value === null || value === undefined) {
                     return '<span class="null-value">NULL</span>';
                 }
-                // Handle different value types
+                
+                // Handle strings (including empty strings)
                 if (typeof value === 'string') {
                     return value || '<span class="null-value">NULL</span>';
                 }
-                return String(value);
+                
+                // Handle numbers
+                if (typeof value === 'number') {
+                    return formatNumber(value);
+                }
+                
+                // Handle dates for date columns
+                if (columnType === 'date') {
+                    return formatDate(value);
+                }
+                
+                // Fallback: convert to string safely
+                try {
+                    return String(value);
+                } catch (e) {
+                    return '<span class="null-value">ERROR</span>';
+                }
             }
         };
         
-        // Type-specific configuration
+        // Type-specific configuration (filter only, no valueFormatter)
         if (columnType === 'number') {
             colDef.type = 'numericColumn';
             colDef.filter = 'agNumberColumnFilter';
-            colDef.valueFormatter = params => formatNumber(params.value);
         } else if (columnType === 'date') {
             colDef.filter = 'agDateColumnFilter';
-            colDef.valueFormatter = params => formatDate(params.value);
         } else {
             colDef.filter = 'agTextColumnFilter';
         }
