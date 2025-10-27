@@ -1464,10 +1464,10 @@ function handleChartTypeChange(newChartType) {
 
 function updateAxisLabelsForChartType(chartType) {
     const labels = {
-        scatter: {x: 'X-Axis (Numeric)', y: 'Y-Axis (Numeric)'},
-        bar: {x: 'X-Axis (Categorical)', y: 'Y-Axis (Numeric)'},
-        line: {x: 'X-Axis (Time/Numeric)', y: 'Y-Axis (Numeric)'},
-        histogram: {x: 'Column (Numeric)', y: null}
+        scatter: {x: 'X-Axis (Numeric)', y: 'Y-Axis (Numeric)', yOptional: false},
+        bar: {x: 'X-Axis (Categorical)', y: 'Y-Axis (Numeric) - Optional for frequency count', yOptional: true},
+        line: {x: 'X-Axis (Time/Numeric)', y: 'Y-Axis (Numeric)', yOptional: false},
+        histogram: {x: 'Column (Numeric)', y: null, yOptional: false}
     };
     
     document.getElementById('x-axis-label').textContent = labels[chartType].x;
@@ -1546,7 +1546,14 @@ function handleAxisSelection() {
     
     clearTimeout(chartGenerationTimeout);
     
-    const hasAllColumns = xColumn && (chartType === 'histogram' || yColumn);
+    // For bar charts, X-axis alone is sufficient (frequency count)
+    // For histogram, only X-axis is needed
+    // For other charts, both X and Y are required
+    const hasAllColumns = xColumn && (
+        chartType === 'histogram' || 
+        chartType === 'bar' ||  // Bar charts can work with just X-axis
+        yColumn
+    );
     
     if (hasAllColumns) {
         chartGenerationTimeout = setTimeout(() => {
@@ -1589,8 +1596,12 @@ async function generateChart() {
     try {
         let chartData;
         
-        if (results.rows.length > maxRows) {
-            // Large dataset: use backend
+        // For bar charts, ALWAYS use backend aggregation (regardless of size)
+        // For other charts, only use backend if dataset is large
+        const useBackend = chartType === 'bar' || results.rows.length > maxRows;
+        
+        if (useBackend) {
+            // Use backend for aggregation or sampling
             console.log(`Sending visualization request with maxRows=${maxRows}, bins=${bins}`);
             const requestBody = {
                 columns: results.columns,
@@ -1629,6 +1640,13 @@ async function generateChart() {
                 showSamplingNotice(result.original_row_count, result.sampled_row_count);
             }
             
+            // Store metadata in state BEFORE preparing chart data so it's available during rendering
+            if (result.metadata) {
+                appState.visualization.chartData = {
+                    metadata: result.metadata
+                };
+            }
+            
             chartData = prepareChartDataClientSide({
                 rows: result.data.rows,
                 chartType,
@@ -1636,6 +1654,11 @@ async function generateChart() {
                 yColumn,
                 bins
             });
+            
+            // Merge metadata into chartData
+            if (result.metadata) {
+                chartData.metadata = result.metadata;
+            }
         } else {
             // Small dataset: process client-side
             chartData = prepareChartDataClientSide({
@@ -1649,7 +1672,11 @@ async function generateChart() {
         
         await renderChart(chartData);
         appState.visualization.status = 'success';
-        appState.visualization.chartData = chartData;
+        // Preserve metadata when storing chartData
+        appState.visualization.chartData = {
+            ...chartData,
+            metadata: chartData.metadata || appState.visualization.chartData?.metadata
+        };
         
     } catch (error) {
         console.error('Chart generation error:', error);
@@ -1658,6 +1685,27 @@ async function generateChart() {
         showChartError(error.message);
     } finally {
         document.getElementById('chart-loading').style.display = 'none';
+    }
+}
+
+/**
+ * Format numeric values with K, M, B notation for readability
+ * @param {number} v - Value to format
+ * @returns {string} Formatted value string
+ */
+function formatValue(v) {
+    if (v === null || v === undefined) return '';
+    
+    if (v >= 1000000000) {
+        return (v / 1000000000).toFixed(1) + 'B';
+    } else if (v >= 1000000) {
+        return (v / 1000000).toFixed(1) + 'M';
+    } else if (v >= 1000) {
+        return (v / 1000).toFixed(1) + 'K';
+    } else if (Number.isInteger(v)) {
+        return v.toString();
+    } else {
+        return v.toFixed(2);
     }
 }
 
@@ -1684,15 +1732,85 @@ function prepareChartDataClientSide({rows, chartType, xColumn, yColumn, bins}) {
             break;
             
         case 'bar':
+            // ===== ENHANCED: Bar chart with aggregated data =====
+            // Backend sends aggregated data with 'value' column
+            const xValues = rows.map(r => r[xColumn]);
+            const yValues = rows.map(r => r.value !== undefined ? r.value : r[yColumn]);
+            
             plotlyData.push({
-                x: rows.map(r => r[xColumn]),
-                y: rows.map(r => r[yColumn]),
+                x: xValues,
+                y: yValues,
                 type: 'bar',
-                marker: {color: '#0066CC'}
+                marker: {
+                    color: '#0066CC',
+                    line: {
+                        color: '#004d99',
+                        width: 1
+                    }
+                },
+                text: yValues.map(v => formatValue(v)),
+                textposition: 'outside',
+                hovertemplate: 
+                    '<b>%{x}</b><br>' +
+                    'Value: %{y:,.2f}<br>' +
+                    '<extra></extra>'
             });
-            layout.title = `${yColumn} by ${xColumn}`;
-            layout.xaxis = {title: xColumn};
-            layout.yaxis = {title: yColumn};
+            
+            // Get metadata from backend (if available)
+            const metadata = appState.visualization.chartData?.metadata || {};
+            
+            // Set chart title and labels
+            layout.title = {
+                text: metadata.chart_title || `${yColumn || 'Count'} by ${xColumn}`,
+                font: {size: 16}
+            };
+            layout.xaxis = {
+                title: metadata.x_axis_label || xColumn,
+                tickangle: -45,
+                automargin: true
+            };
+            layout.yaxis = {
+                title: metadata.y_axis_label || yColumn || 'Value',
+                automargin: true
+            };
+            
+            // Add aggregation info annotation
+            if (metadata.rows_aggregated) {
+                const totalCategories = metadata.total_categories || metadata.categories_shown;
+                const aggregationInfo = metadata.aggregation === 'count' 
+                    ? `${metadata.rows_aggregated.toLocaleString()} rows aggregated into ${metadata.categories_shown} categories`
+                    : `${metadata.aggregation.toUpperCase()}: ${metadata.rows_aggregated.toLocaleString()} rows → ${metadata.categories_shown} categories`;
+                
+                layout.annotations = [{
+                    text: aggregationInfo,
+                    xref: 'paper',
+                    yref: 'paper',
+                    x: 0.5,
+                    y: -0.25,
+                    xanchor: 'center',
+                    yanchor: 'top',
+                    showarrow: false,
+                    font: {size: 11, color: '#666'}
+                }];
+                
+                // Show warning if categories were limited
+                if (metadata.categories_shown < totalCategories) {
+                    layout.annotations.push({
+                        text: `⚠️ Showing top ${metadata.categories_shown} of ${totalCategories} categories`,
+                        xref: 'paper',
+                        yref: 'paper',
+                        x: 0.5,
+                        y: 1.08,
+                        xanchor: 'center',
+                        showarrow: false,
+                        font: {size: 10, color: '#ff6600'}
+                    });
+                    
+                    // Adjust top margin if warning is shown
+                    layout.margin.t = 100;
+                }
+            }
+            
             break;
             
         case 'line':

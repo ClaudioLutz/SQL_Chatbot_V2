@@ -213,6 +213,9 @@ async def visualize_data(request: visualization_service.VisualizationRequest):
     """
     Prepare visualization data with sampling for large datasets.
     
+    For bar charts: automatically aggregates duplicate categories.
+    For other charts: uses existing sampling logic.
+    
     Request body:
         columns: List of column names
         rows: List of row dictionaries
@@ -231,20 +234,67 @@ async def visualize_data(request: visualization_service.VisualizationRequest):
         # Get max_rows from request (Pydantic model field)
         max_rows = request.maxRows if request.maxRows is not None else 10000
         
-        # Debug logging
-        logger.info(f"Visualization request: maxRows={request.maxRows}, using max_rows={max_rows}, dataset_size={len(df)}")
+        if request.chartType == "bar":
+            # ===== NEW: Bar Chart Aggregation =====
+            logger.info(
+                f"Generating bar chart: X={request.xColumn}, "
+                f"Y={request.yColumn or 'None'}, rows={len(df)}"
+            )
+            
+            # Aggregate data on backend
+            chart_data = visualization_service.prepare_bar_chart_data(
+                df=df,
+                x_column=request.xColumn,
+                y_column=request.yColumn,
+                aggregation="auto",  # Smart detection
+                max_categories=50
+            )
+            
+            # Format response for frontend
+            aggregated_rows = [
+                {
+                    request.xColumn: cat,
+                    'value': val
+                }
+                for cat, val in zip(
+                    chart_data['categories'], 
+                    chart_data['values']
+                )
+            ]
+            
+            logger.info(
+                f"Bar chart aggregated: {chart_data['rows_aggregated']} rows → "
+                f"{chart_data['categories_shown']} categories "
+                f"(method: {chart_data['aggregation']})"
+            )
+            
+            return {
+                "status": "success",
+                "data": {
+                    "columns": [request.xColumn, "value"],
+                    "rows": aggregated_rows
+                },
+                "metadata": chart_data,
+                "is_sampled": False,  # Already aggregated, not sampled
+                "column_types": {
+                    request.xColumn: "categorical",
+                    "value": "numeric"
+                }
+            }
         
-        # Prepare visualization data (with sampling if needed)
-        # Note: Large datasets will be automatically sampled to max_rows for performance
-        result = visualization_service.prepare_visualization_data(
-            df=df,
-            chart_type=request.chartType,
-            x_column=request.xColumn,
-            y_column=request.yColumn,
-            max_rows=max_rows
-        )
-        
-        return result
+        else:
+            # ===== EXISTING: Other chart types =====
+            logger.info(f"Visualization request: chartType={request.chartType}, maxRows={max_rows}, dataset_size={len(df)}")
+            
+            result = visualization_service.prepare_visualization_data(
+                df=df,
+                chart_type=request.chartType,
+                x_column=request.xColumn,
+                y_column=request.yColumn,
+                max_rows=max_rows
+            )
+            
+            return result
         
     except ValueError as e:
         # Validation errors (incompatible column types)
